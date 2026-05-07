@@ -10,6 +10,8 @@ from forge_os.adapters.registry import AdapterRegistryError, create_adapter_from
 from forge_os.agents.loader import AgentLoadError, contract_for_persona, persona_for_stage
 from forge_os.agents.models import AgentRunRecord, validate_contract
 from forge_os.config.loader import ConfigError
+from forge_os.context.pruner import ContextPruner, ContextPrunerError
+from forge_os.context.registry import ArtifactRegistry, ArtifactRegistryError
 from forge_os.core.state_manager import utc_now
 from forge_os.events.model import new_event
 from forge_os.memory.lessons import LessonStore
@@ -35,7 +37,11 @@ def run_stage_agent(project_root: Path, state: PipelineState, stage_id: str) -> 
 
     started_at = utc_now()
     approved_lessons = LessonStore(project_root).render_context(stage_id=stage_id)
-    context = _stage_context(state, stage_id, approved_lessons)
+    try:
+        context_selection = ContextPruner(project_root).select(stage_id, token_budget=2000)
+    except ContextPrunerError as exc:
+        raise AgentExecutionError(str(exc)) from exc
+    context = _stage_context(state, stage_id, approved_lessons, context_selection.model_dump())
     tools = persona.default_tools or adapter.get_default_tools()
     try:
         handle = adapter.spawn_agent(persona, context, tools)
@@ -57,8 +63,15 @@ def run_stage_agent(project_root: Path, state: PipelineState, stage_id: str) -> 
         completed_at=completed_at,
         outputs=handle.outputs,
         contract=validation,
-        metadata={"adapter_metadata": handle.metadata, "approved_lessons": approved_lessons},
+        metadata={
+            "adapter_metadata": handle.metadata,
+            "approved_lessons": approved_lessons,
+            "context_selection_id": context_selection.selection_id,
+            "context_total_tokens": context_selection.total_tokens,
+            "context_paths": [item.path for item in context_selection.selected],
+        },
     )
+    _register_agent_outputs(project_root, stage_id, [output.path for output in handle.outputs])
     _append_agent_record(project_root, record)
     _append_agent_event(project_root, record)
 
@@ -72,6 +85,7 @@ def _stage_context(
     state: PipelineState,
     stage_id: str,
     approved_lessons: list[dict[str, object]],
+    context_selection: dict[str, object],
 ) -> str:
     return json.dumps(
         {
@@ -80,9 +94,17 @@ def _stage_context(
             "current_stage_id": state.current_stage_id,
             "stage_id": stage_id,
             "approved_lessons": approved_lessons,
+            "selected_context": context_selection,
         },
         sort_keys=True,
     )
+
+
+def _register_agent_outputs(project_root: Path, stage_id: str, output_paths: list[str]) -> None:
+    try:
+        _ = ArtifactRegistry(project_root).register_stage_outputs(stage_id, output_paths)
+    except ArtifactRegistryError as exc:
+        raise AgentExecutionError(str(exc)) from exc
 
 
 def _append_agent_record(project_root: Path, record: AgentRunRecord) -> None:

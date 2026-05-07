@@ -2,7 +2,7 @@
 
 ## Status
 
-not-started
+complete
 
 ## Objective
 
@@ -69,13 +69,13 @@ Excluded:
 
 ## Exit Checklist
 
-- [ ] Artifact registry works
-- [ ] ADG builds and persists
-- [ ] Staleness detection works
-- [ ] Context pruning works
-- [ ] Context audit logs exist
-- [ ] Tests pass
-- [ ] `CURRENT_PHASE.md` updated to Phase 08
+- [x] Artifact registry works
+- [x] ADG builds and persists
+- [x] Staleness detection works
+- [x] Context pruning works
+- [x] Context audit logs exist
+- [x] Tests pass
+- [x] `CURRENT_PHASE.md` updated to Phase 08
 
 ## Suggested Next Prompt
 

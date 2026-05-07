@@ -2,18 +2,18 @@
 
 ## Current Phase
 
-- Phase: 07
-- File: `plan/PHASE-07-adg-context.md`
+- Phase: 08
+- File: `plan/PHASE-08-backtrack-security.md`
 - Status: not-started
 
 ## Current Objective
 
-Make context deterministic and dependency-aware with artifact registration, an Artifact Dependency Graph, staleness detection, and token-budgeted pruning.
+Add scoped rework planning and enforce a basic security model around tools, paths, commands, and state files.
 
 ## Last Completed Phase
 
-- Phase: 06
-- File: `plan/PHASE-06-memory-lessons.md`
+- Phase: 07
+- File: `plan/PHASE-07-adg-context.md`
 - Status: complete
 
 ## Resolved Decisions
@@ -41,6 +41,7 @@ Make context deterministic and dependency-aware with artifact registration, an A
 14. Phase 04 gates MVP is complete with file/pattern gates, severity handling, gate reports, `forge gate list/check/report`, gate events, persisted latest results, and stage advancement enforcement.
 15. Phase 05 adapters/agents are complete with KernelAdapter interface, adapter registry/config placeholders, DummyAdapter, 12 stage personas, 4 cross-stage personas, output contracts, agent execution logs, `forge adapter list`, `forge agent list/contracts/run`, and optional `forge stage start --spawn-agent`.
 16. Phase 06 memory/lessons are complete with YAML lesson store, reflection files, lesson add/list/approve/deprecate CLI, reflection list/show CLI, stage-completion reflection capture, pending lesson extraction queue, and approved high-confidence lesson injection into agent context.
+17. Phase 07 ADG/context is complete with artifact registry, JSON ADG persistence, stale downstream propagation, deterministic spread-activation context pruning, context selection audit logs, artifact/context CLI commands, stale artifact display in `forge status`, and pruned context integration for agent spawns.
 
 ## Blocking Questions
 
@@ -52,20 +53,21 @@ Read:
 
 1. `BUILD_SPEC.md`
 2. `plan/ORCHESTRATOR.md`
-3. `plan/PHASE-07-adg-context.md`
-4. `plan/PHASE-06-memory-lessons.md`
-5. `plan/PHASE-05-adapters-agents.md`
-6. `plan/KERNEL_ADAPTER_INTERFACE.md`
-7. `plan/ADAPTER_ROADMAP.md`
-8. `ARCHITECTURE.md`
-9. `SCHEMAS.md`
-10. Existing Phase 01-06 code under `src/forge_os/`
-11. Existing tests under `tests/`
+3. `plan/PHASE-08-backtrack-security.md`
+4. `plan/PHASE-07-adg-context.md`
+5. `plan/PHASE-06-memory-lessons.md`
+6. `plan/PHASE-05-adapters-agents.md`
+7. `plan/KERNEL_ADAPTER_INTERFACE.md`
+8. `plan/ADAPTER_ROADMAP.md`
+9. `ARCHITECTURE.md`
+10. `SCHEMAS.md`
+11. Existing Phase 01-07 code under `src/forge_os/`
+12. Existing tests under `tests/`
 
-Phase 07 should implement ADG/artifact context only. Do not implement backtracking, daemon, channels, OpenClaw full integration, or plugins early.
+Phase 08 should implement backtrack/rework/security only. Do not implement daemon, channels, OpenClaw full integration, or plugins early.
 
 Last validation commands:
 
-- `.venv/bin/python -m pytest` — 61 passed.
+- `.venv/bin/python -m pytest` — 67 passed.
 - `.venv/bin/python -m ruff check src tests` — passed.
 - `.venv/bin/python -m compileall src tests` — passed.

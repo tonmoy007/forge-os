@@ -152,6 +152,7 @@ def initialize_project(
     _write_text(root / ".forge" / "events.jsonl", "", overwrite=overwrite)
     _write_text(root / ".forge" / "session-log.jsonl", "", overwrite=overwrite)
     _write_text(root / ".forge" / "agent-runs.jsonl", "", overwrite=overwrite)
+    _write_text(root / ".forge" / "context-selections.jsonl", "", overwrite=overwrite)
     _write_text(root / ".forge" / "security-audit.jsonl", "", overwrite=overwrite)
     _write_text(
         root / ".forge" / "lessons.yaml",
@@ -159,6 +160,16 @@ def initialize_project(
         overwrite=overwrite,
     )
     _write_text(root / ".forge" / "patterns.jsonl", "", overwrite=overwrite)
+    _write_text(
+        root / ".forge" / "artifacts.json",
+        _json_dump({"schema_version": "0.1", "artifacts": []}),
+        overwrite=overwrite,
+    )
+    _write_text(
+        root / ".forge" / "adg.json",
+        _json_dump({"schema_version": "0.1", "nodes": [], "edges": []}),
+        overwrite=overwrite,
+    )
     _write_text(root / "pipeline" / "state.md", _state_markdown(config, state), overwrite=overwrite)
     _write_text(
         root / "pipeline" / "stages.yaml",

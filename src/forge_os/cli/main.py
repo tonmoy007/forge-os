@@ -14,6 +14,8 @@ from forge_os.adapters.registry import ADAPTER_CLASS_NAMES, ADAPTER_PRIORITY
 from forge_os.agents.executor import AgentExecutionError, run_stage_agent
 from forge_os.agents.loader import AgentLoadError, load_contracts, load_personas
 from forge_os.config.loader import ConfigError, load_config
+from forge_os.context.pruner import ContextPruner, ContextPrunerError
+from forge_os.context.registry import ArtifactRegistry, ArtifactRegistryError
 from forge_os.core import StateManager, StateTransitionError
 from forge_os.events.log import EventLogError, filter_events, read_events
 from forge_os.gates import GateCoordinator, GateLoadError
@@ -21,7 +23,12 @@ from forge_os.memory.lessons import LessonStore, LessonStoreError
 from forge_os.memory.reflections import ReflectionStore, ReflectionStoreError
 from forge_os.project.detect import ProjectNotFoundError, find_project_root
 from forge_os.project.scaffold import ProjectAlreadyInitializedError, initialize_project
-from forge_os.project.status import StateError, next_action_for, read_project_status
+from forge_os.project.status import (
+    StateError,
+    next_action_for,
+    read_project_status,
+    stale_artifact_count,
+)
 from forge_os.schemas.config import SUPPORTED_PROFILES
 
 console = Console()
@@ -34,6 +41,8 @@ adapter_app = typer.Typer(help="Inspect configured kernel adapters.")
 agent_app = typer.Typer(help="Inspect and run Forge agent personas.")
 lesson_app = typer.Typer(help="Manage project lessons and approval workflow.")
 reflection_app = typer.Typer(help="Inspect stored lifecycle reflections.")
+artifact_app = typer.Typer(help="Manage registered artifacts and the ADG.")
+context_app = typer.Typer(help="Select deterministic pruned agent context.")
 app.add_typer(config_app, name="config")
 app.add_typer(stage_app, name="stage")
 app.add_typer(events_app, name="events")
@@ -42,6 +51,8 @@ app.add_typer(adapter_app, name="adapter")
 app.add_typer(agent_app, name="agent")
 app.add_typer(lesson_app, name="lesson")
 app.add_typer(reflection_app, name="reflection")
+app.add_typer(artifact_app, name="artifact")
+app.add_typer(context_app, name="context")
 
 EXPLAIN_TOPICS: dict[str, str] = {
     "phase-01": (
@@ -91,6 +102,14 @@ EXPLAIN_TOPICS: dict[str, str] = {
     "reflections": (
         "Phase 06 reflections are structured YAML files under `.forge/reflections/`, "
         "captured after lifecycle milestones for lesson review."
+    ),
+    "artifacts": (
+        "Phase 07 artifacts are registered project-relative files with explicit "
+        "dependencies and freshness metadata."
+    ),
+    "context": (
+        "Phase 07 context selection traverses the artifact dependency graph and prunes "
+        "selected files under a deterministic token budget."
     ),
 }
 
@@ -197,6 +216,7 @@ def status(
     table.add_row("State schema", state.schema_version)
     table.add_row("Current stage", state.current_stage_id or "none")
     table.add_row("Default adapter", config.default_adapter)
+    table.add_row("Stale artifacts", str(stale_artifact_count(root)))
     table.add_row("Next action", next_action_for(state))
     console.print(table)
 
@@ -747,6 +767,126 @@ def reflection_show(
         raise typer.Exit(code=1) from exc
 
     console.print(yaml.safe_dump(reflection.model_dump(mode="json"), sort_keys=False))
+
+
+@artifact_app.command("list")
+def artifact_list(
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
+    status: Annotated[str | None, typer.Option("--status", help="Filter by status.")] = None,
+    stage_id: Annotated[str | None, typer.Option("--stage", help="Filter by stage.")] = None,
+) -> None:
+    """List registered artifacts."""
+
+    try:
+        root = find_project_root(path.resolve() if path else None)
+        artifacts = ArtifactRegistry(root).list(status=status, stage_id=stage_id)
+    except (ProjectNotFoundError, ArtifactRegistryError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    table = Table(title="Forge Artifacts")
+    table.add_column("Path")
+    table.add_column("Stage", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Tokens", no_wrap=True)
+    table.add_column("Dependencies")
+    for artifact in artifacts:
+        table.add_row(
+            artifact.path,
+            artifact.stage_id or "",
+            artifact.status,
+            str(artifact.token_estimate),
+            ",".join(artifact.dependencies),
+        )
+    console.print(table)
+
+
+@artifact_app.command("register")
+def artifact_register(
+    artifact_path: Annotated[str, typer.Argument(help="Project-relative artifact path.")],
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
+    stage_id: Annotated[str | None, typer.Option("--stage", help="Owning stage id.")] = None,
+    dependency: Annotated[
+        list[str] | None,
+        typer.Option("--dependency", help="Dependency path. Can be repeated."),
+    ] = None,
+) -> None:
+    """Register or update one artifact."""
+
+    try:
+        root = find_project_root(path.resolve() if path else None)
+        artifact = ArtifactRegistry(root).register(
+            artifact_path,
+            stage_id=stage_id,
+            dependencies=dependency or [],
+            metadata={"registered_by": "cli"},
+        )
+    except (ProjectNotFoundError, ArtifactRegistryError, ValueError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"[green]Registered artifact:[/green] {artifact.path} ({artifact.status})")
+
+
+@artifact_app.command("refresh")
+def artifact_refresh(
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
+) -> None:
+    """Refresh artifact hashes and mark stale downstream artifacts."""
+
+    try:
+        root = find_project_root(path.resolve() if path else None)
+        document = ArtifactRegistry(root).refresh()
+    except (ProjectNotFoundError, ArtifactRegistryError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    stale = len([artifact for artifact in document.artifacts if artifact.status == "stale"])
+    console.print(f"[green]Refreshed artifacts:[/green] {len(document.artifacts)} ({stale} stale)")
+
+
+@context_app.command("select")
+def context_select(
+    stage_id: Annotated[str, typer.Argument(help="Stage id to select context for.")],
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
+    token_budget: Annotated[
+        int,
+        typer.Option("--token-budget", min=1, help="Maximum estimated tokens."),
+    ] = 2000,
+) -> None:
+    """Select deterministic pruned context for one stage."""
+
+    try:
+        root = find_project_root(path.resolve() if path else None)
+        selection = ContextPruner(root).select(stage_id, token_budget=token_budget)
+    except (ProjectNotFoundError, ContextPrunerError, ArtifactRegistryError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    table = Table(title=f"Context Selection: {stage_id}")
+    table.add_column("Path")
+    table.add_column("Priority", no_wrap=True)
+    table.add_column("Tokens", no_wrap=True)
+    table.add_column("Reason")
+    for item in selection.selected:
+        table.add_row(item.path, str(item.priority), str(item.token_estimate), item.reason)
+    console.print(table)
+    console.print(
+        f"Selected {len(selection.selected)} artifact(s), "
+        f"{selection.total_tokens}/{selection.token_budget} estimated tokens."
+    )
 
 
 @events_app.command("list")
