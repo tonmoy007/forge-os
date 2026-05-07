@@ -17,6 +17,8 @@ from forge_os.config.loader import ConfigError, load_config
 from forge_os.core import StateManager, StateTransitionError
 from forge_os.events.log import EventLogError, filter_events, read_events
 from forge_os.gates import GateCoordinator, GateLoadError
+from forge_os.memory.lessons import LessonStore, LessonStoreError
+from forge_os.memory.reflections import ReflectionStore, ReflectionStoreError
 from forge_os.project.detect import ProjectNotFoundError, find_project_root
 from forge_os.project.scaffold import ProjectAlreadyInitializedError, initialize_project
 from forge_os.project.status import StateError, next_action_for, read_project_status
@@ -30,12 +32,16 @@ events_app = typer.Typer(help="Inspect normalized lifecycle events.")
 gate_app = typer.Typer(help="Inspect and evaluate Forge gates.")
 adapter_app = typer.Typer(help="Inspect configured kernel adapters.")
 agent_app = typer.Typer(help="Inspect and run Forge agent personas.")
+lesson_app = typer.Typer(help="Manage project lessons and approval workflow.")
+reflection_app = typer.Typer(help="Inspect stored lifecycle reflections.")
 app.add_typer(config_app, name="config")
 app.add_typer(stage_app, name="stage")
 app.add_typer(events_app, name="events")
 app.add_typer(gate_app, name="gate")
 app.add_typer(adapter_app, name="adapter")
 app.add_typer(agent_app, name="agent")
+app.add_typer(lesson_app, name="lesson")
+app.add_typer(reflection_app, name="reflection")
 
 EXPLAIN_TOPICS: dict[str, str] = {
     "phase-01": (
@@ -77,6 +83,14 @@ EXPLAIN_TOPICS: dict[str, str] = {
     "agents": (
         "Phase 05 agents are open-format personas with deterministic output contracts. "
         "Use `forge agent list` and `forge agent run` to inspect or execute them."
+    ),
+    "lessons": (
+        "Phase 06 lessons are project-local YAML records. Pending lessons require approval "
+        "before they are injected into future agent context."
+    ),
+    "reflections": (
+        "Phase 06 reflections are structured YAML files under `.forge/reflections/`, "
+        "captured after lifecycle milestones for lesson review."
     ),
 }
 
@@ -546,6 +560,193 @@ def agent_run(
         f"[green]Agent completed:[/green] {record.persona_id} "
         f"via {record.adapter} ({record.status})"
     )
+
+
+@lesson_app.command("list")
+def lesson_list(
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
+    status: Annotated[
+        str | None,
+        typer.Option("--status", help="Filter by pending, approved, or deprecated."),
+    ] = None,
+    stage_id: Annotated[
+        str | None,
+        typer.Option("--stage", help="Filter by applicable stage id."),
+    ] = None,
+    tag: Annotated[str | None, typer.Option("--tag", help="Filter by tag.")] = None,
+) -> None:
+    """List project lessons."""
+
+    try:
+        root = find_project_root(path.resolve() if path else None)
+        lessons = LessonStore(root).list(status=status, stage_id=stage_id, tag=tag)
+    except (ProjectNotFoundError, LessonStoreError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    table = Table(title="Forge Lessons")
+    table.add_column("ID", max_width=16)
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Confidence", no_wrap=True)
+    table.add_column("Stage", no_wrap=True)
+    table.add_column("Tags")
+    table.add_column("Text")
+    for lesson in lessons:
+        table.add_row(
+            lesson.id,
+            lesson.status,
+            f"{lesson.confidence:.2f}",
+            lesson.stage_id or "global",
+            ",".join(lesson.tags),
+            lesson.text,
+        )
+    console.print(table)
+
+
+@lesson_app.command("add")
+def lesson_add(
+    text: Annotated[str, typer.Argument(help="Lesson text to store.")],
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
+    confidence: Annotated[
+        float,
+        typer.Option("--confidence", min=0.0, max=1.0, help="Confidence from 0.0 to 1.0."),
+    ] = 0.5,
+    tag: Annotated[
+        list[str] | None,
+        typer.Option("--tag", help="Applicability tag. Can be repeated."),
+    ] = None,
+    stage_id: Annotated[
+        str | None,
+        typer.Option("--stage", help="Stage id this lesson applies to."),
+    ] = None,
+    approve: Annotated[
+        bool,
+        typer.Option("--approve", help="Immediately approve this manual lesson."),
+    ] = False,
+) -> None:
+    """Add a manual project lesson."""
+
+    try:
+        root = find_project_root(path.resolve() if path else None)
+        store = LessonStore(root)
+        lesson = store.add(
+            text,
+            confidence=confidence,
+            tags=tag or [],
+            stage_id=stage_id,
+            source="manual",
+            status="approved" if approve else "pending",
+        )
+        if approve:
+            lesson = store.approve(lesson.id)
+    except (ProjectNotFoundError, LessonStoreError, ValueError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"[green]Added lesson:[/green] {lesson.id} ({lesson.status})")
+
+
+@lesson_app.command("approve")
+def lesson_approve(
+    lesson_id: Annotated[str, typer.Argument(help="Lesson id to approve.")],
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
+) -> None:
+    """Approve a pending lesson so it can enter future context."""
+
+    try:
+        root = find_project_root(path.resolve() if path else None)
+        lesson = LessonStore(root).approve(lesson_id)
+    except (ProjectNotFoundError, LessonStoreError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"[green]Approved lesson:[/green] {lesson.id}")
+
+
+@lesson_app.command("deprecate")
+def lesson_deprecate(
+    lesson_id: Annotated[str, typer.Argument(help="Lesson id to deprecate.")],
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
+) -> None:
+    """Deprecate a lesson so it is excluded from future context."""
+
+    try:
+        root = find_project_root(path.resolve() if path else None)
+        lesson = LessonStore(root).deprecate(lesson_id)
+    except (ProjectNotFoundError, LessonStoreError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"[yellow]Deprecated lesson:[/yellow] {lesson.id}")
+
+
+@reflection_app.command("list")
+def reflection_list(
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
+    stage_id: Annotated[
+        str | None,
+        typer.Option("--stage", help="Filter by stage id."),
+    ] = None,
+) -> None:
+    """List stored reflections."""
+
+    try:
+        root = find_project_root(path.resolve() if path else None)
+        reflections = ReflectionStore(root).list(stage_id=stage_id)
+    except (ProjectNotFoundError, ReflectionStoreError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    table = Table(title="Forge Reflections")
+    table.add_column("ID", max_width=16)
+    table.add_column("Stage", no_wrap=True)
+    table.add_column("Event", no_wrap=True)
+    table.add_column("Created")
+    table.add_column("Summary")
+    for reflection in reflections:
+        table.add_row(
+            reflection.id,
+            reflection.stage_id or "",
+            reflection.event_type,
+            reflection.created_at,
+            reflection.summary,
+        )
+    console.print(table)
+
+
+@reflection_app.command("show")
+def reflection_show(
+    reflection_id: Annotated[str, typer.Argument(help="Reflection id to show.")],
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
+) -> None:
+    """Show one reflection as YAML."""
+
+    try:
+        root = find_project_root(path.resolve() if path else None)
+        reflection = ReflectionStore(root).get(reflection_id)
+    except (ProjectNotFoundError, ReflectionStoreError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(yaml.safe_dump(reflection.model_dump(mode="json"), sort_keys=False))
 
 
 @events_app.command("list")

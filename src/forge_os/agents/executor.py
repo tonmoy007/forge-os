@@ -12,6 +12,7 @@ from forge_os.agents.models import AgentRunRecord, validate_contract
 from forge_os.config.loader import ConfigError
 from forge_os.core.state_manager import utc_now
 from forge_os.events.model import new_event
+from forge_os.memory.lessons import LessonStore
 from forge_os.schemas.state import PipelineState
 
 
@@ -33,7 +34,8 @@ def run_stage_agent(project_root: Path, state: PipelineState, stage_id: str) -> 
         raise AgentExecutionError(str(exc)) from exc
 
     started_at = utc_now()
-    context = _stage_context(state, stage_id)
+    approved_lessons = LessonStore(project_root).render_context(stage_id=stage_id)
+    context = _stage_context(state, stage_id, approved_lessons)
     tools = persona.default_tools or adapter.get_default_tools()
     try:
         handle = adapter.spawn_agent(persona, context, tools)
@@ -55,7 +57,7 @@ def run_stage_agent(project_root: Path, state: PipelineState, stage_id: str) -> 
         completed_at=completed_at,
         outputs=handle.outputs,
         contract=validation,
-        metadata={"adapter_metadata": handle.metadata},
+        metadata={"adapter_metadata": handle.metadata, "approved_lessons": approved_lessons},
     )
     _append_agent_record(project_root, record)
     _append_agent_event(project_root, record)
@@ -66,13 +68,18 @@ def run_stage_agent(project_root: Path, state: PipelineState, stage_id: str) -> 
     return record
 
 
-def _stage_context(state: PipelineState, stage_id: str) -> str:
+def _stage_context(
+    state: PipelineState,
+    stage_id: str,
+    approved_lessons: list[dict[str, object]],
+) -> str:
     return json.dumps(
         {
             "project_id": state.project_id,
             "profile": state.profile,
             "current_stage_id": state.current_stage_id,
             "stage_id": stage_id,
+            "approved_lessons": approved_lessons,
         },
         sort_keys=True,
     )

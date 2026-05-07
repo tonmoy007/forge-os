@@ -2,7 +2,7 @@
 
 ## Status
 
-not-started
+complete
 
 ## Objective
 
@@ -71,13 +71,13 @@ Excluded:
 
 ## Exit Checklist
 
-- [ ] Lesson store works
-- [ ] Reflection store works
-- [ ] CLI lesson lifecycle works
-- [ ] Approval workflow works
-- [ ] Context injection uses approved lessons
-- [ ] Tests pass
-- [ ] `CURRENT_PHASE.md` updated to Phase 07
+- [x] Lesson store works
+- [x] Reflection store works
+- [x] CLI lesson lifecycle works
+- [x] Approval workflow works
+- [x] Context injection uses approved lessons
+- [x] Tests pass
+- [x] `CURRENT_PHASE.md` updated to Phase 07
 
 ## Suggested Next Prompt
 

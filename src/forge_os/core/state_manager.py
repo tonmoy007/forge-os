@@ -134,6 +134,7 @@ class StateManager:
         state.current_stage_id = None
         self.save(state)
         self.log_transition("StageCompleted", state, stage.stage_id)
+        self._record_stage_completion_reflection(stage.stage_id)
         return state
 
     def advance(self) -> PipelineState:
@@ -274,6 +275,13 @@ class StateManager:
         if not blocking:
             return "Gate evaluation blocked this stage."
         return "; ".join(result.summary for result in blocking)
+
+    def _record_stage_completion_reflection(self, stage_id: str) -> None:
+        """Run the Phase 06 deterministic reflector after stage completion."""
+
+        from forge_os.memory.reflections import ReflectionStore
+
+        _ = ReflectionStore(self.project_root).record_stage_completion(stage_id)
 
 
 def validate_state_file(path: Path) -> PipelineState:

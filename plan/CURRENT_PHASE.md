@@ -2,18 +2,18 @@
 
 ## Current Phase
 
-- Phase: 06
-- File: `plan/PHASE-06-memory-lessons.md`
+- Phase: 07
+- File: `plan/PHASE-07-adg-context.md`
 - Status: not-started
 
 ## Current Objective
 
-Add project-level learning with reflections, structured lessons, approval workflow, and context injection from approved lessons.
+Make context deterministic and dependency-aware with artifact registration, an Artifact Dependency Graph, staleness detection, and token-budgeted pruning.
 
 ## Last Completed Phase
 
-- Phase: 05
-- File: `plan/PHASE-05-adapters-agents.md`
+- Phase: 06
+- File: `plan/PHASE-06-memory-lessons.md`
 - Status: complete
 
 ## Resolved Decisions
@@ -40,6 +40,7 @@ Add project-level learning with reflections, structured lessons, approval workfl
 13. Phase 03 events/hooks are complete with normalized lifecycle events, in-process event bus, hook registry, hook timeout/failure isolation, and `forge events list/tail`.
 14. Phase 04 gates MVP is complete with file/pattern gates, severity handling, gate reports, `forge gate list/check/report`, gate events, persisted latest results, and stage advancement enforcement.
 15. Phase 05 adapters/agents are complete with KernelAdapter interface, adapter registry/config placeholders, DummyAdapter, 12 stage personas, 4 cross-stage personas, output contracts, agent execution logs, `forge adapter list`, `forge agent list/contracts/run`, and optional `forge stage start --spawn-agent`.
+16. Phase 06 memory/lessons are complete with YAML lesson store, reflection files, lesson add/list/approve/deprecate CLI, reflection list/show CLI, stage-completion reflection capture, pending lesson extraction queue, and approved high-confidence lesson injection into agent context.
 
 ## Blocking Questions
 
@@ -51,19 +52,20 @@ Read:
 
 1. `BUILD_SPEC.md`
 2. `plan/ORCHESTRATOR.md`
-3. `plan/PHASE-06-memory-lessons.md`
-4. `plan/PHASE-05-adapters-agents.md`
-5. `plan/KERNEL_ADAPTER_INTERFACE.md`
-6. `plan/ADAPTER_ROADMAP.md`
-7. `ARCHITECTURE.md`
-8. `SCHEMAS.md`
-9. Existing Phase 01-05 code under `src/forge_os/`
-10. Existing tests under `tests/`
+3. `plan/PHASE-07-adg-context.md`
+4. `plan/PHASE-06-memory-lessons.md`
+5. `plan/PHASE-05-adapters-agents.md`
+6. `plan/KERNEL_ADAPTER_INTERFACE.md`
+7. `plan/ADAPTER_ROADMAP.md`
+8. `ARCHITECTURE.md`
+9. `SCHEMAS.md`
+10. Existing Phase 01-06 code under `src/forge_os/`
+11. Existing tests under `tests/`
 
-Phase 06 should implement memory/reflections/lessons only. Do not implement ADG, backtracking, daemon, channels, OpenClaw full integration, or plugins early.
+Phase 07 should implement ADG/artifact context only. Do not implement backtracking, daemon, channels, OpenClaw full integration, or plugins early.
 
 Last validation commands:
 
-- `.venv/bin/python -m pytest` — 55 passed.
+- `.venv/bin/python -m pytest` — 61 passed.
 - `.venv/bin/python -m ruff check src tests` — passed.
 - `.venv/bin/python -m compileall src tests` — passed.
