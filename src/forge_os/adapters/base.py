@@ -1,0 +1,97 @@
+"""Phase 05 Kernel Adapter interface."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from typing import Any, Protocol, runtime_checkable
+from uuid import uuid4
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from forge_os.agents.models import AgentDefinition, OutputArtifact
+from forge_os.events.model import LifecycleEvent
+from forge_os.schemas.state import PipelineState
+
+ToolList = list[str]
+
+
+class AgentHandle(BaseModel):
+    """Provider-neutral handle returned by `KernelAdapter.spawn_agent`."""
+
+    model_config = ConfigDict(extra="allow")
+
+    handle_id: str = Field(default_factory=lambda: f"agent-{uuid4()}")
+    provider: str
+    persona_id: str
+    stage_id: str | None = None
+    status: str = "running"
+    outputs: list[OutputArtifact] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class EventResponse(BaseModel):
+    """Normalized response from adapter lifecycle event handling."""
+
+    model_config = ConfigDict(extra="allow")
+
+    handled: bool = True
+    actions: list[str] = Field(default_factory=list)
+    message: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+@runtime_checkable
+class KernelAdapter(Protocol):
+    """Minimal portable interface used by Forge OS Core."""
+
+    adapter_id: str
+
+    def spawn_agent(
+        self,
+        persona: AgentDefinition,
+        context: str,
+        tools: ToolList,
+    ) -> AgentHandle:
+        """Start an agent and return a normalized provider-neutral handle."""
+        ...
+
+    def on_event(self, event: LifecycleEvent, session: PipelineState) -> EventResponse:
+        """Translate or process a Forge lifecycle event."""
+        ...
+
+    def get_default_tools(self) -> ToolList:
+        """Return default abstract tools supported by this adapter."""
+        ...
+
+    def supports(self, capability: str) -> bool:
+        """Return whether an optional runtime capability is available."""
+        ...
+
+
+class UnsupportedAdapterCapability(RuntimeError):
+    """Raised when optional adapter control is requested but unsupported."""
+
+
+class BaseKernelAdapter:
+    """Convenience base class for adapters."""
+
+    adapter_id = "base"
+    optional_capabilities: frozenset[str] = frozenset()
+
+    def supports(self, capability: str) -> bool:
+        return capability in self.optional_capabilities
+
+    def _intersect_tools(self, requested: Iterable[str]) -> ToolList:
+        defaults = set(self.get_default_tools())
+        return [tool for tool in requested if tool in defaults]
+
+    def on_event(self, event: LifecycleEvent, session: PipelineState) -> EventResponse:
+        return EventResponse(
+            handled=True,
+            actions=[],
+            message=f"{self.adapter_id} observed {event.event_type}",
+            metadata={"project_id": session.project_id},
+        )
+
+    def get_default_tools(self) -> ToolList:
+        return []

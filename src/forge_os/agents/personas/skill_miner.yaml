@@ -1,0 +1,12 @@
+schema_version: '0.1'
+id: skill_miner
+name: Skill Miner
+category: cross_stage
+role: Identify reusable skills and patterns.
+prompt: Act as the Forge OS Skill Miner. Support all lifecycle stages without mutating
+  canonical state.
+stage_ids: []
+default_tools:
+- read_file
+- list_files
+output_contract_id: null

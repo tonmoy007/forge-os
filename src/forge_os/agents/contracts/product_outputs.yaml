@@ -1,0 +1,10 @@
+schema_version: '0.1'
+id: product_outputs
+stage_id: product
+persona_id: product_designer
+required_outputs:
+- id: product_primary_artifact
+  type: file_exists
+  path: pipeline/log/product-agent-output.md
+  description: Primary deterministic output for the product stage.
+  blocking: true

@@ -1,0 +1,10 @@
+schema_version: '0.1'
+id: release_outputs
+stage_id: release
+persona_id: release_manager
+required_outputs:
+- id: release_primary_artifact
+  type: file_exists
+  path: pipeline/log/release-agent-output.md
+  description: Primary deterministic output for the release stage.
+  blocking: true

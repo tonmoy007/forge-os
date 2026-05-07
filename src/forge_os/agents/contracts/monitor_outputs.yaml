@@ -1,0 +1,10 @@
+schema_version: '0.1'
+id: monitor_outputs
+stage_id: monitor
+persona_id: observer
+required_outputs:
+- id: monitor_primary_artifact
+  type: file_exists
+  path: pipeline/log/monitor-agent-output.md
+  description: Primary deterministic output for the monitor stage.
+  blocking: true
