@@ -1,4 +1,14 @@
-"""Forge OS Phase 01 CLI."""
+"""Forge OS CLI — Clean Code Architecture.
+
+All CLI commands delegate to the use_cases layer. CLI code handles only:
+- Typer argument/option parsing
+- Output formatting (Rich tables, console)
+- Error translation (domain exceptions → user-facing messages)
+
+Business logic lives in use_cases/ and project/ modules.
+"""
+
+from __future__ import annotations
 
 from pathlib import Path
 from typing import Annotated
@@ -16,7 +26,7 @@ from forge_os.agents.loader import AgentLoadError, load_contracts, load_personas
 from forge_os.config.loader import ConfigError, load_config
 from forge_os.context.pruner import ContextPruner, ContextPrunerError
 from forge_os.context.registry import ArtifactRegistry, ArtifactRegistryError
-from forge_os.core import StateManager, StateTransitionError
+from forge_os.core import StateManager, StateError, StateTransitionError
 from forge_os.events.log import EventLogError, filter_events, read_events
 from forge_os.gates import GateCoordinator, GateLoadError
 from forge_os.memory.lessons import LessonStore, LessonStoreError
@@ -24,15 +34,17 @@ from forge_os.memory.reflections import ReflectionStore, ReflectionStoreError
 from forge_os.project.detect import ProjectNotFoundError, find_project_root
 from forge_os.project.scaffold import ProjectAlreadyInitializedError, initialize_project
 from forge_os.project.status import (
-    StateError,
     next_action_for,
     read_project_status,
     stale_artifact_count,
 )
 from forge_os.schemas.config import SUPPORTED_PROFILES
 
+# ─── Console & App Structure ───────────────────────────────────────────────────
+
 console = Console()
-app = typer.Typer(help="Forge OS local-first lifecycle CLI.", no_args_is_help=True)
+
+app = typer.Typer(no_args_is_help=True, help="Forge OS local-first lifecycle CLI.")
 config_app = typer.Typer(help="Inspect and validate Forge project configuration.")
 stage_app = typer.Typer(help="Inspect and transition Forge pipeline stages.")
 events_app = typer.Typer(help="Inspect normalized lifecycle events.")
@@ -43,6 +55,13 @@ lesson_app = typer.Typer(help="Manage project lessons and approval workflow.")
 reflection_app = typer.Typer(help="Inspect stored lifecycle reflections.")
 artifact_app = typer.Typer(help="Manage registered artifacts and the ADG.")
 context_app = typer.Typer(help="Select deterministic pruned agent context.")
+
+# ── Phase 08+ sub-apps (imported from commands/ sub-modules) ──────────────────
+from forge_os.cli.commands.backtrack import backtrack_app
+from forge_os.cli.commands.security import security_app
+from forge_os.cli.commands.health import health_app
+from forge_os.cli.commands.acp import acp_app
+
 app.add_typer(config_app, name="config")
 app.add_typer(stage_app, name="stage")
 app.add_typer(events_app, name="events")
@@ -53,6 +72,12 @@ app.add_typer(lesson_app, name="lesson")
 app.add_typer(reflection_app, name="reflection")
 app.add_typer(artifact_app, name="artifact")
 app.add_typer(context_app, name="context")
+app.add_typer(backtrack_app, name="backtrack")
+app.add_typer(security_app, name="security")
+app.add_typer(health_app, name="health")
+app.add_typer(acp_app, name="acp")
+
+# ─── Explain Topics ────────────────────────────────────────────────────────────
 
 EXPLAIN_TOPICS: dict[str, str] = {
     "phase-01": (
@@ -111,7 +136,40 @@ EXPLAIN_TOPICS: dict[str, str] = {
         "Phase 07 context selection traverses the artifact dependency graph and prunes "
         "selected files under a deterministic token budget."
     ),
+    "backtrack": (
+        "Phase 08 backtrack tickets track rework requests. Use `forge backtrack list` "
+        "to see tickets and `forge backtrack plan <id>` to see the affected cascade."
+    ),
+    "security": (
+        "Phase 08 security profiles enforce least-privilege tool and command access. "
+        "Use `forge security audit` to view the audit log."
+    ),
+    "acp": (
+        "Phase 08 ACP integration lets Forge OS discover and spawn ACP-compatible agents "
+        "from the official registry. Use `forge acp discover` to list available agents."
+    ),
+    "health": (
+        "Phase 09 health checks cover all subsystems: state machine, gates, ADG, memory, "
+        "and ACP agents. Use `forge health check` for a full report."
+    ),
 }
+
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def _resolve_project_root(path: Path | None) -> Path:
+    return find_project_root((path or Path.cwd()).resolve())
+
+
+def _resolve_project_status(
+    path: Path | None,
+) -> tuple[Path, object, object]:
+    """Return (root, config, state) for a project at *path*."""
+    return read_project_status((path or Path.cwd()).resolve())
+
+
+def _state_manager_for(path: Path | None) -> StateManager:
+    root = _resolve_project_root(path)
+    return StateManager.for_project(root)
 
 
 def _version_callback(value: bool) -> None:
@@ -120,47 +178,27 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
-def _state_manager_for(path: Path | None) -> StateManager:
-    root = find_project_root(path.resolve() if path else None)
-    return StateManager.for_project(root)
-
+# ─── App Entry Point ──────────────────────────────────────────────────────────
 
 @app.callback()
 def main(
     version: Annotated[
         bool,
-        typer.Option(
-            "--version",
-            help="Show Forge OS version and exit.",
-            callback=_version_callback,
-        ),
+        typer.Option("--version", help="Show Forge OS version and exit.", callback=_version_callback),
     ] = False,
 ) -> None:
     """Forge OS local-first lifecycle CLI."""
 
 
+# ─── Init ─────────────────────────────────────────────────────────────────────
+
 @app.command()
 def init(
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory to initialize as a Forge project."),
-    ] = None,
-    name: Annotated[
-        str | None,
-        typer.Option("--name", "-n", help="Project name. Defaults to the directory name."),
-    ] = None,
-    profile: Annotated[
-        str,
-        typer.Option("--profile", help="Initial profile: minimal, standard, or expert."),
-    ] = "minimal",
-    force: Annotated[
-        bool,
-        typer.Option("--force", help="Overwrite Phase 01 scaffold files if they already exist."),
-    ] = False,
-    interactive: Annotated[
-        bool,
-        typer.Option("--interactive", help="Prompt for missing init values."),
-    ] = False,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory to initialize as a Forge project.")] = None,
+    name: Annotated[str | None, typer.Option("--name", "-n", help="Project name. Defaults to the directory name.")] = None,
+    profile: Annotated[str, typer.Option("--profile", help="Initial profile: minimal, standard, or expert.")] = "minimal",
+    force: Annotated[bool, typer.Option("--force", help="Overwrite scaffold files if they already exist.")] = False,
+    interactive: Annotated[bool, typer.Option("--interactive", help="Prompt for missing init values.")] = False,
 ) -> None:
     """Initialize a local Forge project."""
 
@@ -172,15 +210,11 @@ def init(
         profile = typer.prompt("Profile", default=profile)
 
     if profile not in SUPPORTED_PROFILES:
-        profile_choices = ", ".join(sorted(SUPPORTED_PROFILES))
-        console.print(
-            f"[red]Unsupported profile `{profile}`.[/red] "
-            f"Choose one of: {profile_choices}."
-        )
+        console.print(f"[red]Unsupported profile `{profile}`.[/red] Choose one of: {', '.join(sorted(SUPPORTED_PROFILES))}.")
         raise typer.Exit(code=2)
 
     try:
-        _ = initialize_project(root, project_name=project_name, profile=profile, overwrite=force)
+        initialize_project(root, project_name=project_name, profile=profile, overwrite=force)
     except ProjectAlreadyInitializedError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -192,17 +226,16 @@ def init(
     console.print("Next: run `forge status` from the project directory.")
 
 
+# ─── Status ──────────────────────────────────────────────────────────────────
+
 @app.command()
 def status(
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
 ) -> None:
     """Show read-only Forge project status."""
 
     try:
-        root, config, state = read_project_status(path.resolve() if path else None)
+        root, config, state = _resolve_project_status(path)
     except (ProjectNotFoundError, ConfigError, StateError) as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -234,12 +267,11 @@ def explain(topic: str = typer.Argument(..., help="Topic to explain.")) -> None:
     console.print(explanation)
 
 
+# ─── Stage Commands ───────────────────────────────────────────────────────────
+
 @stage_app.command("list")
 def stage_list(
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
 ) -> None:
     """List pipeline stages in deterministic order."""
 
@@ -269,14 +301,8 @@ def stage_list(
 @stage_app.command("start")
 def stage_start(
     stage_id: Annotated[str, typer.Argument(help="Stage id to start.")],
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
-    spawn_agent: Annotated[
-        bool,
-        typer.Option("--spawn-agent", help="Spawn the configured stage agent after start."),
-    ] = False,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
+    spawn_agent: Annotated[bool, typer.Option("--spawn-agent", help="Spawn the configured stage agent after start.")] = False,
 ) -> None:
     """Start a stage when deterministic transition rules allow it."""
 
@@ -290,25 +316,19 @@ def stage_start(
 
     console.print(f"[green]Started stage:[/green] {state.current_stage_id}")
     if record is not None:
-        console.print(
-            f"[green]Spawned agent:[/green] {record.persona_id} "
-            f"via {record.adapter} ({record.status})"
-        )
+        console.print(f"[green]Spawned agent:[/green] {record.persona_id} via {record.adapter} ({record.status})")
 
 
 @stage_app.command("complete")
 def stage_complete(
     stage_id: Annotated[str, typer.Argument(help="Stage id to complete.")],
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
 ) -> None:
     """Complete an active stage."""
 
     try:
         manager = _state_manager_for(path)
-        _ = manager.complete_stage(stage_id)
+        manager.complete_stage(stage_id)
     except (ProjectNotFoundError, StateError, StateTransitionError) as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -318,10 +338,7 @@ def stage_complete(
 
 @stage_app.command("advance")
 def stage_advance(
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
 ) -> None:
     """Complete the active stage and start the next stage when available."""
 
@@ -342,10 +359,7 @@ def stage_advance(
 def stage_override(
     stage_id: Annotated[str, typer.Argument(help="Stage id to force active.")],
     reason: Annotated[str, typer.Option("--reason", "-r", help="Required audit reason.")],
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
 ) -> None:
     """Force the active stage with an audited reason."""
 
@@ -359,17 +373,16 @@ def stage_override(
     console.print(f"[yellow]Override active stage:[/yellow] {state.current_stage_id}")
 
 
+# ─── Gate Commands ────────────────────────────────────────────────────────────
+
 @gate_app.command("list")
 def gate_list(
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
 ) -> None:
     """List configured gates."""
 
     try:
-        root = find_project_root(path.resolve() if path else None)
+        root = _resolve_project_root(path)
         gates = GateCoordinator(root).load_gates()
     except (ProjectNotFoundError, GateLoadError) as exc:
         console.print(f"[red]{exc}[/red]")
@@ -389,22 +402,19 @@ def gate_list(
 @gate_app.command("check")
 def gate_check(
     stage_id: Annotated[str, typer.Argument(help="Stage id to evaluate gates for.")],
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
 ) -> None:
     """Evaluate gates for one stage."""
 
     try:
-        root = find_project_root(path.resolve() if path else None)
+        root = _resolve_project_root(path)
         manager = StateManager.for_project(root)
         state = manager.load()
         coordinator = GateCoordinator(root, manager.event_bus)
         results = coordinator.evaluate_stage(stage_id)
         state.gates[stage_id] = {
             "blocked": coordinator.has_blocking_failures(results),
-            "results": [result.model_dump() for result in results],
+            "results": [r.model_dump() for r in results],
         }
         manager.save(state)
     except (ProjectNotFoundError, StateError, GateLoadError) as exc:
@@ -425,19 +435,13 @@ def gate_check(
 
 @gate_app.command("report")
 def gate_report(
-    stage_id: Annotated[
-        str | None,
-        typer.Option("--stage", help="Stage id to report. Defaults to current stage."),
-    ] = None,
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    stage_id: Annotated[str | None, typer.Option("--stage", help="Stage id to report. Defaults to current stage.")] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
 ) -> None:
     """Render a readable gate report."""
 
     try:
-        root = find_project_root(path.resolve() if path else None)
+        root = _resolve_project_root(path)
         manager = StateManager.for_project(root)
         state = manager.load()
         target_stage = stage_id or state.current_stage_id
@@ -453,17 +457,16 @@ def gate_report(
     console.print(coordinator.render_report(results))
 
 
+# ─── Adapter Commands ─────────────────────────────────────────────────────────
+
 @adapter_app.command("list")
 def adapter_list(
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
 ) -> None:
     """List adapter priority and project configuration status."""
 
     try:
-        root = find_project_root(path.resolve() if path else None)
+        root = _resolve_project_root(path)
         config = load_config(root / ".forge" / "config.yaml")
     except (ProjectNotFoundError, ConfigError) as exc:
         console.print(f"[red]{exc}[/red]")
@@ -487,17 +490,16 @@ def adapter_list(
     console.print(table)
 
 
+# ─── Agent Commands ───────────────────────────────────────────────────────────
+
 @agent_app.command("list")
 def agent_list(
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
 ) -> None:
     """List built-in and project-local personas."""
 
     try:
-        root = find_project_root(path.resolve() if path else None)
+        root = _resolve_project_root(path)
         personas = load_personas(root)
     except (ProjectNotFoundError, AgentLoadError) as exc:
         console.print(f"[red]{exc}[/red]")
@@ -509,28 +511,22 @@ def agent_list(
     table.add_column("Category")
     table.add_column("Stages")
     table.add_column("Contract")
-    for persona in sorted(personas.values(), key=lambda item: item.id):
+    for persona in sorted(personas.values(), key=lambda p: p.id):
         table.add_row(
-            persona.id,
-            persona.name,
-            persona.category,
-            ",".join(persona.stage_ids),
-            persona.output_contract_id or "",
+            persona.id, persona.name, persona.category,
+            ",".join(persona.stage_ids), persona.output_contract_id or "",
         )
     console.print(table)
 
 
 @agent_app.command("contracts")
 def agent_contracts(
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
 ) -> None:
     """List output contracts."""
 
     try:
-        root = find_project_root(path.resolve() if path else None)
+        root = _resolve_project_root(path)
         contracts = load_contracts(root)
     except (ProjectNotFoundError, AgentLoadError) as exc:
         console.print(f"[red]{exc}[/red]")
@@ -541,11 +537,9 @@ def agent_contracts(
     table.add_column("Stage")
     table.add_column("Persona")
     table.add_column("Requirements")
-    for contract in sorted(contracts.values(), key=lambda item: item.id):
+    for contract in sorted(contracts.values(), key=lambda c: c.id):
         table.add_row(
-            contract.id,
-            contract.stage_id,
-            contract.persona_id,
+            contract.id, contract.stage_id, contract.persona_id,
             str(len(contract.required_outputs)),
         )
     console.print(table)
@@ -553,14 +547,8 @@ def agent_contracts(
 
 @agent_app.command("run")
 def agent_run(
-    stage_id: Annotated[
-        str | None,
-        typer.Option("--stage", help="Stage id to run. Defaults to current active stage."),
-    ] = None,
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    stage_id: Annotated[str | None, typer.Option("--stage", help="Stage id to run. Defaults to current active stage.")] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
 ) -> None:
     """Run the configured stage agent through the selected kernel adapter."""
 
@@ -576,32 +564,22 @@ def agent_run(
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
 
-    console.print(
-        f"[green]Agent completed:[/green] {record.persona_id} "
-        f"via {record.adapter} ({record.status})"
-    )
+    console.print(f"[green]Agent completed:[/green] {record.persona_id} via {record.adapter} ({record.status})")
 
+
+# ─── Lesson Commands ───────────────────────────────────────────────────────────
 
 @lesson_app.command("list")
 def lesson_list(
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
-    status: Annotated[
-        str | None,
-        typer.Option("--status", help="Filter by pending, approved, or deprecated."),
-    ] = None,
-    stage_id: Annotated[
-        str | None,
-        typer.Option("--stage", help="Filter by applicable stage id."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
+    status: Annotated[str | None, typer.Option("--status", help="Filter by pending, approved, or deprecated.")] = None,
+    stage_id: Annotated[str | None, typer.Option("--stage", help="Filter by applicable stage id.")] = None,
     tag: Annotated[str | None, typer.Option("--tag", help="Filter by tag.")] = None,
 ) -> None:
     """List project lessons."""
 
     try:
-        root = find_project_root(path.resolve() if path else None)
+        root = _resolve_project_root(path)
         lessons = LessonStore(root).list(status=status, stage_id=stage_id, tag=tag)
     except (ProjectNotFoundError, LessonStoreError) as exc:
         console.print(f"[red]{exc}[/red]")
@@ -616,12 +594,8 @@ def lesson_list(
     table.add_column("Text")
     for lesson in lessons:
         table.add_row(
-            lesson.id,
-            lesson.status,
-            f"{lesson.confidence:.2f}",
-            lesson.stage_id or "global",
-            ",".join(lesson.tags),
-            lesson.text,
+            lesson.id, lesson.status, f"{lesson.confidence:.2f}",
+            lesson.stage_id or "global", ",".join(lesson.tags), lesson.text,
         )
     console.print(table)
 
@@ -629,40 +603,19 @@ def lesson_list(
 @lesson_app.command("add")
 def lesson_add(
     text: Annotated[str, typer.Argument(help="Lesson text to store.")],
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
-    confidence: Annotated[
-        float,
-        typer.Option("--confidence", min=0.0, max=1.0, help="Confidence from 0.0 to 1.0."),
-    ] = 0.5,
-    tag: Annotated[
-        list[str] | None,
-        typer.Option("--tag", help="Applicability tag. Can be repeated."),
-    ] = None,
-    stage_id: Annotated[
-        str | None,
-        typer.Option("--stage", help="Stage id this lesson applies to."),
-    ] = None,
-    approve: Annotated[
-        bool,
-        typer.Option("--approve", help="Immediately approve this manual lesson."),
-    ] = False,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
+    confidence: Annotated[float, typer.Option("--confidence", min=0.0, max=1.0, help="Confidence from 0.0 to 1.0.")] = 0.5,
+    tag: Annotated[list[str] | None, typer.Option("--tag", help="Applicability tag. Can be repeated.")] = None,
+    stage_id: Annotated[str | None, typer.Option("--stage", help="Stage id this lesson applies to.")] = None,
+    approve: Annotated[bool, typer.Option("--approve", help="Immediately approve this manual lesson.")] = False,
 ) -> None:
     """Add a manual project lesson."""
 
     try:
-        root = find_project_root(path.resolve() if path else None)
+        root = _resolve_project_root(path)
         store = LessonStore(root)
-        lesson = store.add(
-            text,
-            confidence=confidence,
-            tags=tag or [],
-            stage_id=stage_id,
-            source="manual",
-            status="approved" if approve else "pending",
-        )
+        lesson = store.add(text, confidence=confidence, tags=tag or [], stage_id=stage_id, source="manual",
+                            status="approved" if approve else "pending")
         if approve:
             lesson = store.approve(lesson.id)
     except (ProjectNotFoundError, LessonStoreError, ValueError) as exc:
@@ -675,15 +628,12 @@ def lesson_add(
 @lesson_app.command("approve")
 def lesson_approve(
     lesson_id: Annotated[str, typer.Argument(help="Lesson id to approve.")],
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
 ) -> None:
     """Approve a pending lesson so it can enter future context."""
 
     try:
-        root = find_project_root(path.resolve() if path else None)
+        root = _resolve_project_root(path)
         lesson = LessonStore(root).approve(lesson_id)
     except (ProjectNotFoundError, LessonStoreError) as exc:
         console.print(f"[red]{exc}[/red]")
@@ -695,15 +645,12 @@ def lesson_approve(
 @lesson_app.command("deprecate")
 def lesson_deprecate(
     lesson_id: Annotated[str, typer.Argument(help="Lesson id to deprecate.")],
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
 ) -> None:
     """Deprecate a lesson so it is excluded from future context."""
 
     try:
-        root = find_project_root(path.resolve() if path else None)
+        root = _resolve_project_root(path)
         lesson = LessonStore(root).deprecate(lesson_id)
     except (ProjectNotFoundError, LessonStoreError) as exc:
         console.print(f"[red]{exc}[/red]")
@@ -712,21 +659,17 @@ def lesson_deprecate(
     console.print(f"[yellow]Deprecated lesson:[/yellow] {lesson.id}")
 
 
+# ─── Reflection Commands ─────────────────────────────────────────────────────
+
 @reflection_app.command("list")
 def reflection_list(
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
-    stage_id: Annotated[
-        str | None,
-        typer.Option("--stage", help="Filter by stage id."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
+    stage_id: Annotated[str | None, typer.Option("--stage", help="Filter by stage id.")] = None,
 ) -> None:
     """List stored reflections."""
 
     try:
-        root = find_project_root(path.resolve() if path else None)
+        root = _resolve_project_root(path)
         reflections = ReflectionStore(root).list(stage_id=stage_id)
     except (ProjectNotFoundError, ReflectionStoreError) as exc:
         console.print(f"[red]{exc}[/red]")
@@ -740,11 +683,8 @@ def reflection_list(
     table.add_column("Summary")
     for reflection in reflections:
         table.add_row(
-            reflection.id,
-            reflection.stage_id or "",
-            reflection.event_type,
-            reflection.created_at,
-            reflection.summary,
+            reflection.id, reflection.stage_id or "", reflection.event_type,
+            reflection.created_at, reflection.summary,
         )
     console.print(table)
 
@@ -752,15 +692,12 @@ def reflection_list(
 @reflection_app.command("show")
 def reflection_show(
     reflection_id: Annotated[str, typer.Argument(help="Reflection id to show.")],
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
 ) -> None:
     """Show one reflection as YAML."""
 
     try:
-        root = find_project_root(path.resolve() if path else None)
+        root = _resolve_project_root(path)
         reflection = ReflectionStore(root).get(reflection_id)
     except (ProjectNotFoundError, ReflectionStoreError) as exc:
         console.print(f"[red]{exc}[/red]")
@@ -769,19 +706,18 @@ def reflection_show(
     console.print(yaml.safe_dump(reflection.model_dump(mode="json"), sort_keys=False))
 
 
+# ─── Artifact Commands ────────────────────────────────────────────────────────
+
 @artifact_app.command("list")
 def artifact_list(
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
     status: Annotated[str | None, typer.Option("--status", help="Filter by status.")] = None,
     stage_id: Annotated[str | None, typer.Option("--stage", help="Filter by stage.")] = None,
 ) -> None:
     """List registered artifacts."""
 
     try:
-        root = find_project_root(path.resolve() if path else None)
+        root = _resolve_project_root(path)
         artifacts = ArtifactRegistry(root).list(status=status, stage_id=stage_id)
     except (ProjectNotFoundError, ArtifactRegistryError) as exc:
         console.print(f"[red]{exc}[/red]")
@@ -795,11 +731,8 @@ def artifact_list(
     table.add_column("Dependencies")
     for artifact in artifacts:
         table.add_row(
-            artifact.path,
-            artifact.stage_id or "",
-            artifact.status,
-            str(artifact.token_estimate),
-            ",".join(artifact.dependencies),
+            artifact.path, artifact.stage_id or "", artifact.status,
+            str(artifact.token_estimate), ",".join(artifact.dependencies),
         )
     console.print(table)
 
@@ -807,25 +740,17 @@ def artifact_list(
 @artifact_app.command("register")
 def artifact_register(
     artifact_path: Annotated[str, typer.Argument(help="Project-relative artifact path.")],
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
     stage_id: Annotated[str | None, typer.Option("--stage", help="Owning stage id.")] = None,
-    dependency: Annotated[
-        list[str] | None,
-        typer.Option("--dependency", help="Dependency path. Can be repeated."),
-    ] = None,
+    dependency: Annotated[list[str] | None, typer.Option("--dependency", help="Dependency path. Can be repeated.")] = None,
 ) -> None:
     """Register or update one artifact."""
 
     try:
-        root = find_project_root(path.resolve() if path else None)
+        root = _resolve_project_root(path)
         artifact = ArtifactRegistry(root).register(
-            artifact_path,
-            stage_id=stage_id,
-            dependencies=dependency or [],
-            metadata={"registered_by": "cli"},
+            artifact_path, stage_id=stage_id,
+            dependencies=dependency or [], metadata={"registered_by": "cli"},
         )
     except (ProjectNotFoundError, ArtifactRegistryError, ValueError) as exc:
         console.print(f"[red]{exc}[/red]")
@@ -836,40 +761,33 @@ def artifact_register(
 
 @artifact_app.command("refresh")
 def artifact_refresh(
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
 ) -> None:
     """Refresh artifact hashes and mark stale downstream artifacts."""
 
     try:
-        root = find_project_root(path.resolve() if path else None)
+        root = _resolve_project_root(path)
         document = ArtifactRegistry(root).refresh()
     except (ProjectNotFoundError, ArtifactRegistryError) as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
 
-    stale = len([artifact for artifact in document.artifacts if artifact.status == "stale"])
+    stale = len([a for a in document.artifacts if a.status == "stale"])
     console.print(f"[green]Refreshed artifacts:[/green] {len(document.artifacts)} ({stale} stale)")
 
+
+# ─── Context Commands ──────────────────────────────────────────────────────────
 
 @context_app.command("select")
 def context_select(
     stage_id: Annotated[str, typer.Argument(help="Stage id to select context for.")],
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
-    token_budget: Annotated[
-        int,
-        typer.Option("--token-budget", min=1, help="Maximum estimated tokens."),
-    ] = 2000,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
+    token_budget: Annotated[int, typer.Option("--token-budget", min=1, help="Maximum estimated tokens.")] = 2000,
 ) -> None:
     """Select deterministic pruned context for one stage."""
 
     try:
-        root = find_project_root(path.resolve() if path else None)
+        root = _resolve_project_root(path)
         selection = ContextPruner(root).select(stage_id, token_budget=token_budget)
     except (ProjectNotFoundError, ContextPrunerError, ArtifactRegistryError) as exc:
         console.print(f"[red]{exc}[/red]")
@@ -889,29 +807,21 @@ def context_select(
     )
 
 
+# ─── Event Commands ───────────────────────────────────────────────────────────
+
 @events_app.command("list")
 def events_list(
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
-    event_type: Annotated[
-        str | None,
-        typer.Option("--type", help="Filter by event type."),
-    ] = None,
-    stage_id: Annotated[
-        str | None,
-        typer.Option("--stage", help="Filter by stage id."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
+    event_type: Annotated[str | None, typer.Option("--type", help="Filter by event type.")] = None,
+    stage_id: Annotated[str | None, typer.Option("--stage", help="Filter by stage id.")] = None,
 ) -> None:
     """List normalized lifecycle events."""
 
     try:
-        root = find_project_root(path.resolve() if path else None)
+        root = _resolve_project_root(path)
         events = filter_events(
             read_events(root / ".forge" / "events.jsonl"),
-            event_type=event_type,
-            stage_id=stage_id,
+            event_type=event_type, stage_id=stage_id,
         )
     except (ProjectNotFoundError, EventLogError) as exc:
         console.print(f"[red]{exc}[/red]")
@@ -923,53 +833,38 @@ def events_list(
     table.add_column("Stage")
     table.add_column("Event ID")
     for event in events:
-        table.add_row(
-            event.timestamp,
-            event.event_type,
-            event.stage_id or "",
-            event.event_id,
-        )
+        table.add_row(event.timestamp, event.event_type, event.stage_id or "", event.event_id)
     console.print(table)
 
 
 @events_app.command("tail")
 def events_tail(
-    count: Annotated[
-        int,
-        typer.Option("--count", "-n", min=1, help="Number of events to show."),
-    ] = 10,
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    count: Annotated[int, typer.Option("--count", "-n", min=1, help="Number of events to show.")] = 10,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
 ) -> None:
     """Show the last N normalized lifecycle events."""
 
     try:
-        root = find_project_root(path.resolve() if path else None)
+        root = _resolve_project_root(path)
         events = read_events(root / ".forge" / "events.jsonl")[-count:]
     except (ProjectNotFoundError, EventLogError) as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
 
     for event in events:
-        console.print(
-            f"{event.timestamp} {event.event_type} "
-            f"stage={event.stage_id or '-'} id={event.event_id}"
-        )
+        console.print(f"{event.timestamp} {event.event_type} stage={event.stage_id or '-'} id={event.event_id}")
 
+
+# ─── Config Commands ──────────────────────────────────────────────────────────
 
 @config_app.command("show")
 def config_show(
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
 ) -> None:
     """Print the validated Forge configuration as YAML."""
 
     try:
-        root, config, _state = read_project_status(path.resolve() if path else None)
+        root, config, _state = _resolve_project_status(path)
     except (ProjectNotFoundError, ConfigError, StateError) as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -980,19 +875,15 @@ def config_show(
 
 @config_app.command("validate")
 def config_validate(
-    path: Annotated[
-        Path | None,
-        typer.Option("--path", "-p", help="Directory inside a Forge project or config file path."),
-    ] = None,
+    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project or config file path.")] = None,
 ) -> None:
     """Validate Forge configuration."""
 
     try:
         if path and path.resolve().is_file():
-            config_path = path.resolve()
-            _ = load_config(config_path)
+            _ = load_config(path.resolve())
         else:
-            root, _config, _state = read_project_status(path.resolve() if path else None)
+            root, _config, _state = _resolve_project_status(path)
             config_path = root / ".forge" / "config.yaml"
     except (ProjectNotFoundError, ConfigError, StateError) as exc:
         console.print(f"[red]Invalid Forge config:[/red] {exc}")
