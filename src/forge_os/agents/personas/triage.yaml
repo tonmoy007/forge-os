@@ -1,0 +1,14 @@
+schema_version: '0.1'
+id: triage
+name: Triage
+category: stage
+role: Analyze feedback and classify issues.
+prompt: Act as the Forge OS Triage. Work only within the active `feedback` stage and
+  produce the declared contract outputs.
+stage_ids:
+- feedback
+default_tools:
+- read_file
+- write_file
+- list_files
+output_contract_id: feedback_outputs

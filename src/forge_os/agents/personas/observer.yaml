@@ -1,0 +1,14 @@
+schema_version: '0.1'
+id: observer
+name: Observer
+category: stage
+role: Monitor runtime behavior and operational signals.
+prompt: Act as the Forge OS Observer. Work only within the active `monitor` stage
+  and produce the declared contract outputs.
+stage_ids:
+- monitor
+default_tools:
+- read_file
+- write_file
+- list_files
+output_contract_id: monitor_outputs

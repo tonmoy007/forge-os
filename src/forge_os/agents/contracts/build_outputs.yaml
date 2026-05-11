@@ -1,0 +1,10 @@
+schema_version: '0.1'
+id: build_outputs
+stage_id: build
+persona_id: builder
+required_outputs:
+- id: build_primary_artifact
+  type: file_exists
+  path: pipeline/log/build-agent-output.md
+  description: Primary deterministic output for the build stage.
+  blocking: true
