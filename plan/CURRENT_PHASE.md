@@ -90,11 +90,14 @@ None currently.
 ### A: Async Adapter Migration (Independent)
 | ID | Task | Status |
 |---|---|---|
-| P08.5.01 | Define async `KernelAdapter` protocol | 🔄 |
-| P08.5.02 | Implement async `DummyAdapter` | 🔄 |
-| P08.5.03 | Async adapter executor and agent runner | 🔄 |
-| P08.5.04 | Add `aiohttp`/`httpx` as core async HTTP deps | 🔄 |
-| P08.5.05 | Remove Phase 08 sync wrappers | 🔄 |
+| P08.5.01 | Define async `KernelAdapter` protocol | ✅ |
+| P08.5.02 | Implement async `DummyAdapter` | ✅ |
+| P08.5.03 | Add async `BaseKernelAdapter` | ✅ |
+| P08.5.04 | Implement async agent executor | ✅ `run_stage_agent_async` in `agents/executor.py` |
+| P08.5.05 | Add `aiohttp`/`httpx` as core async HTTP deps | ✅ |
+| P08.5.06 | Add async HTTP utility module | ✅ `kernel/http.py` with retry+timeout |
+| P08.5.07 | Add sync-to-async compatibility tests | ✅ 20 tests, all pass |
+| P08.5.08 | Remove Phase 08 sync wrappers | 🔄 future cleanup |
 
 ### B: CocoIndex Evaluation & POC (Independent)
 | ID | Task | Status |

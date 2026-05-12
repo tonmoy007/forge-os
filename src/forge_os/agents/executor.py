@@ -1,4 +1,7 @@
-"""Phase 05 stage-agent execution orchestration."""
+"""Phase 05 stage-agent execution orchestration.
+
+Phase 08.5 adds async variant `run_stage_agent_async`.
+"""
 
 from __future__ import annotations
 
@@ -130,3 +133,77 @@ def _append_agent_event(project_root: Path, record: AgentRunRecord) -> None:
         },
     )
     append_event(project_root / ".forge" / "events.jsonl", event)
+
+
+# ── Async Variant (Phase 08.5) ─────────────────────────────────────────────
+
+
+async def run_stage_agent_async(
+    project_root: Path,
+    state: PipelineState,
+    stage_id: str,
+) -> AgentRunRecord:
+    """Async variant of run_stage_agent. Uses AsyncDummyAdapter when configured.
+
+    Follows the same logic as the sync version but delegates to async adapters.
+    Currently supports AsyncDummyAdapter; more async adapter targets added per
+    Phase 08.5 workstream A.
+    """
+    from forge_os.adapters.async_dummy import AsyncDummyAdapter
+
+    try:
+        persona = persona_for_stage(project_root, stage_id)
+        contract = contract_for_persona(project_root, persona)
+    except (AgentLoadError, AdapterRegistryError, ConfigError) as exc:
+        raise AgentExecutionError(str(exc)) from exc
+
+    started_at = utc_now()
+    approved_lessons = LessonStore(project_root).render_context(stage_id=stage_id)
+    try:
+        context_selection = ContextPruner(project_root).select(stage_id, token_budget=2000)
+    except ContextPrunerError as exc:
+        raise AgentExecutionError(str(exc)) from exc
+    context = _stage_context(state, stage_id, approved_lessons, context_selection.model_dump())
+    tools = persona.default_tools or []
+
+    # Use AsyncDummyAdapter. In future phases this routes to the configured
+    # async adapter via an async adapter registry.
+    adapter = AsyncDummyAdapter(project_root, create_outputs=True)
+    try:
+        handle = await adapter.spawn_agent(persona, context, tools)
+    except AdapterRegistryError as exc:
+        raise AgentExecutionError(str(exc)) from exc
+
+    validation = validate_contract(project_root, contract)
+    completed_at = utc_now()
+    status = (
+        "completed" if validation.passed and handle.status == "completed" else "contract_failed"
+    )
+    record = AgentRunRecord(
+        run_id=f"async-run-{uuid4()}",
+        adapter=handle.provider,
+        handle_id=handle.handle_id,
+        persona_id=persona.id,
+        stage_id=stage_id,
+        status=status,
+        started_at=started_at,
+        completed_at=completed_at,
+        outputs=handle.outputs,
+        contract=validation,
+        metadata={
+            "adapter_metadata": handle.metadata,
+            "approved_lessons": approved_lessons,
+            "context_selection_id": context_selection.selection_id,
+            "context_total_tokens": context_selection.total_tokens,
+            "context_paths": [item.path for item in context_selection.selected],
+            "async": True,
+        },
+    )
+    _register_agent_outputs(project_root, stage_id, [output.path for output in handle.outputs])
+    _append_agent_record(project_root, record)
+    _append_agent_event(project_root, record)
+
+    if not validation.passed:
+        summaries = "; ".join(check.summary for check in validation.checks if not check.passed)
+        raise AgentExecutionError(summaries or f"Output contract `{contract.id}` failed.")
+    return record
