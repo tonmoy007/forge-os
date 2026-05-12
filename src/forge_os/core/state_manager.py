@@ -1,4 +1,7 @@
-"""Deterministic Phase 02 pipeline state manager."""
+"""Deterministic Phase 02 pipeline state manager.
+
+Phase 08.5 adds dual-write Event Store alongside state.json.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +15,7 @@ from pydantic import ValidationError
 
 from forge_os.config.loader import ConfigError, load_config
 from forge_os.events.bus import EventBus
+from forge_os.events.store import EventStore
 from forge_os.gates.coordinator import GateCoordinator
 from forge_os.gates.models import GateResult
 from forge_os.hooks.registry import HookRegistry
@@ -45,6 +49,14 @@ class StateManager:
         self.events_path: Path = self.forge_dir / "events.jsonl"
         self.state_markdown_path: Path = self.pipeline_dir / "state.md"
         self.event_bus: EventBus = EventBus(self.events_path, hook_registry)
+        self._event_store: EventStore | None = None
+
+    @property
+    def event_store(self) -> EventStore:
+        """Lazy-initialized Event Store for dual-write."""
+        if self._event_store is None:
+            self._event_store = EventStore(self.forge_dir / "events.db")
+        return self._event_store
 
     @classmethod
     def for_project(
@@ -73,12 +85,23 @@ class StateManager:
             raise
 
     def save(self, state: PipelineState) -> None:
-        """Persist state atomically and sync the human-readable markdown mirror."""
+        """Persist state atomically, sync markdown mirror, and dual-write Event Store."""
 
         state.updated_at = utc_now()
-        self._atomic_write_text(self.state_path, self._dump_json(state.model_dump()))
+        state_dict = state.model_dump()
+        self._atomic_write_text(self.state_path, self._dump_json(state_dict))
         config = self.load_config()
         self._atomic_write_text(self.state_markdown_path, self.render_state_markdown(config, state))
+
+        # Dual-write: append state snapshot to Event Store (best-effort, non-blocking)
+        try:
+            self.event_store.append_state_event(
+                stream_id=f"project/{state.project_id}",
+                state=state_dict,
+            )
+        except Exception:  # noqa: BLE001
+            # Event Store failure must not block state.json writes
+            pass
 
     def list_stages(self) -> list[StageState]:
         """Return stage states in configured order."""

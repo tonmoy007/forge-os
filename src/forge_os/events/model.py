@@ -25,6 +25,20 @@ EventType = Literal[
     "HookCompleted",
     "HookFailed",
     "HookTimedOut",
+    # Phase 08 event types
+    "BacktrackTicketCreated",
+    "BacktrackTicketApproved",
+    "BacktrackReworkStarted",
+    "BacktrackReworkCompleted",
+    "SecurityActionAudited",
+    "ACPRegistryDiscovered",
+    "ACPAgentInstalled",
+    "ACPSessionStarted",
+    "ACPSessionClosed",
+    "ExternalCommandGateEvaluated",
+    "MetricThresholdGateEvaluated",
+    # Event Store dual-write event types
+    "StateSaved",
 ]
 
 
