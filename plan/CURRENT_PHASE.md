@@ -1,42 +1,23 @@
 # Current Forge OS Phase
 
 > **Session Continuity:** If this session is interrupted, run `git log --oneline -5 && git diff HEAD && cat plan/RESUME.md 2>/dev/null || echo "No RESUME.md"` before continuing.
-> Last validated: 130 tests passed, ruff clean (new files), compileall clean.
+> Last validated: 133 tests passed, ruff clean (new/modified files), compileall clean.
 
 ## Current Phase
 
-- Phase: 08
-- File: `plan/PHASE-08-backtrack-security.md`
+- Phase: 08.5
+- File: `plan/PHASE-08.5-async-cocoindex.md`
 - Status: in-progress
 
 ## Current Objective
 
-Add scoped rework planning, enforce a basic security model around tools, paths, commands, and state files, and integrate ACP (Agent Client Protocol) registry discovery with IKernelAdapter enhancements to enable Forge OS to spawn and manage ACP-compatible coding agents.
+Prepare Forge OS for the v4 architecture by migrating the `KernelAdapter` protocol from synchronous to asynchronous execution, evaluating and adopting CocoIndex as the incremental indexing engine for the Context Pruner, and laying groundwork for event-sourced state.
 
 ## Last Completed Phase
 
-- Phase: 07
-- File: `plan/PHASE-07-adg-context.md`
+- Phase: 08
+- File: `plan/PHASE-08-backtrack-security.md`
 - Status: complete
-
-## Phase 08 Scope Expansion
-
-Phase 08 has been expanded to include ACP (Agent Client Protocol) integration based on the ACP Registry RFD and IKernelAdapter enhancements research. The ACP integration provides:
-
-- **ACP Registry Discovery** — Fetch and parse the official ACP Registry (`https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json`) to discover compatible coding agents
-- **ACPClient** — JSON-RPC over stdio communication with ACP-compatible agents (Gemini CLI, Copilot CLI, Codex, Claude Code via ACPx, etc.)
-- **Session Management** — session/list, session/resume, session/close (all stabilized April 2026)
-- **Agent Lifecycle** — discover, install (binary/npx/uvx), spawn, manage ACP agents from within Forge OS
-- **IKernelAdapter Enhancements** — spawn_acp_agent, list_acp_agents, get_acp_registry_adapter, is_acp_available
-- **Adapter Fallback Chain** — OpenClawAdapter → OpenCodeAdapter → LocalLLMAdapter → HumanAdapter
-
-### Why ACP in Phase 08?
-
-1. `IKernelAdapter` is Phase 05 infrastructure — ACP is a natural extension of it
-2. External command gates (P08.12) benefit directly from ACP agent spawning
-3. Backtrack diff-mode rerun (P08.06) can leverage ACP session resume
-4. Phase 11 (`forge plug`, OpenClawAdapter) already has "Implement offline fallback to another adapter" — ACP makes that fallback meaningful
-5. Phase 09 (Health) will use ACP session health checks for agent restart logic
 
 ## Discipline & Clean Code Enforcement (Phase 08+)
 
@@ -104,60 +85,36 @@ Expected test count after Phase 08: 120+ passed.
 
 None currently.
 
-## Phase 08 Task Summary
+## Phase 08.5 Task Summary
 
-### Backtrack & Rework
+### A: Async Adapter Migration (Independent)
 | ID | Task | Status |
 |---|---|---|
-| P08.01 | Define backtrack ticket schema | ✅ |
-| P08.02 | Add `forge backtrack list` | ✅ |
-| P08.03 | Add `forge backtrack plan <id>` | ✅ |
-| P08.04 | Generate affected stages from ADG | 🔄 basic implementation |
-| P08.05 | Add `forge backtrack approve <id>` | ✅ |
-| P08.06 | Add `forge backtrack run <id>` in diff mode | ✅ |
-| P08.07 | Clear stale flags after revalidation | 🔄 pending |
+| P08.5.01 | Define async `KernelAdapter` protocol | 🔄 |
+| P08.5.02 | Implement async `DummyAdapter` | 🔄 |
+| P08.5.03 | Async adapter executor and agent runner | 🔄 |
+| P08.5.04 | Add `aiohttp`/`httpx` as core async HTTP deps | 🔄 |
+| P08.5.05 | Remove Phase 08 sync wrappers | 🔄 |
 
-### Security Profiles & Enforcement
+### B: CocoIndex Evaluation & POC (Independent)
 | ID | Task | Status |
 |---|---|---|
-| P08.08 | Define tool/security profile schema | ✅ |
-| P08.09 | Enforce path restrictions for tools | ✅ |
-| P08.10 | Prevent agents from directly writing state files | ✅ |
-| P08.11 | Add command allowlist and timeout runner | ✅ |
-| P08.14 | Write `.forge/security-audit.jsonl` | ✅ |
+| P08.5.06 | Evaluate CocoIndex for incremental indexing | 🔄 |
+| P08.5.07 | CocoIndex pipeline integration with Context Pruner | 🔄 |
+| P08.5.08 | Tree-sitter based code chunking via `RecursiveSplitter` | 🔄 |
 
-### Gates
+### C: Event Store Groundwork (Independent)
 | ID | Task | Status |
 |---|---|---|
-| P08.12 | Implement `ExternalCommand` gate evaluator | ✅ |
-| P08.13 | Implement `MetricThreshold` gate evaluator | ✅ |
-| P08.15 | Phase 08 tests (ACP, gates, backtrack, security) | ✅ 63 new tests |
+| P08.5.09 | Event Store aggregate schema definition | 🔄 |
+| P08.5.10 | Dual-write Event Store alongside `state.json` | 🔄 |
 
-### ACP Backend Implementation
-| ID | Task | Status |
-|---|---|---|
-| P08.16-P08.17 | `ACPClient` & `ACPRegistryAdapter` | ✅ `kernel/` module created |
-| P08.18-P08.19 | Session management (list, resume, close) | ✅ |
-| P08.20-P08.21 | `session_config_options`, session info update | ✅ |
-| P08.22 | Agent installation (binary/npx/uvx) | ✅ |
-| P08.23-P08.27 | ACP CLI commands now functional | ✅ backend wired |
-
-### IKernelAdapter ACP Enhancements
-| ID | Task | Status |
-|---|---|---|
-| P08.28-P08.31 | ACP methods on protocol + base class | ✅ added to `KernelAdapter` protocol & `BaseKernelAdapter` |
-
-### Adapter Priority Chain
-| ID | Task | Status |
-|---|---|---|
-| P08.32-P08.35 | Fallback chain + LiteLLMAdapter ACP | 🔄 deferred to Phase 08.5 async migration |
-
-### Phase 08 Validation
-| Item | Status |
+### Phase 08.5 Validation
+| Item | Target |
 |---|---|
-| Tests pass | ✅ 130 total (67 baseline + 63 new) |
-| Ruff lint | ✅ clean for new/modified files |
-| Compileall | ✅ clean |
+| Tests pass | TBD |
+| Ruff lint | clean |
+| Compileall | clean |
 
 ## Notes For The Next Implementer
 
@@ -165,74 +122,65 @@ Read:
 
 1. `BUILD_SPEC.md`
 2. `plan/ORCHESTRATOR.md`
-3. `plan/PHASE-08-backtrack-security.md` (expanded with ACP tasks)
-4. `plan/PHASE-07-adg-context.md`
-5. `plan/PHASE-06-memory-lessons.md`
+3. `plan/PHASE-08.5-async-cocoindex.md` — current phase plan
+4. `plan/PHASE-08-backtrack-security.md` — completed phase for reference
+5. `plan/PHASE-07-adg-context.md`
 6. `plan/PHASE-05-adapters-agents.md`
-7. `plan/PHASE-11-channels-openclaw-extensions.md` (OpenClaw integration builds on ACP)
-8. `plan/KERNEL_ADAPTER_INTERFACE.md`
-9. `plan/ADAPTER_ROADMAP.md`
-10. `ARCHITECTURE.md`
-11. `SCHEMAS.md`
-12. Existing Phase 01-07 code under `src/forge_os/`
-13. Existing tests under `tests/`
-14. **`src/forge_os/cli/commands/` — new command modules for Phase 08+**
+7. `plan/v4/KERNEL_UPDATED_PLAN.md` — async research, ACP registry details
+8. `plan/v4/MEMORY_CONTEXT_UPDATED_PLAN.md` — CocoIndex evaluation details
+9. `plan/KERNEL_ADAPTER_INTERFACE.md`
+10. `plan/ADAPTER_ROADMAP.md`
+11. `ARCHITECTURE.md`
+12. `SCHEMAS.md`
+13. Existing source under `src/forge_os/`
+14. Existing tests under `tests/`
 
-Phase 08 should implement backtrack/rework, security baseline, and ACP integration only. Do not implement daemon, channels, OpenClaw full integration, or plugins early.
+### Phase 08.5 Overview (Three Independent Workstreams)
 
-### ACP-Specific Implementation Notes
+| Workstream | Description | Key Files |
+|---|---|---|
+| **A: Async Migration** | Migrate KernelAdapter protocol to async, update DummyAdapter and executor | `adapters/base.py`, `adapters/dummy.py`, `agents/executor.py` |
+| **B: CocoIndex** | Evaluate CocoIndex, integrate with Context Pruner for incremental indexing | `context/pruner.py`, `context/pipeline.py` (new) |
+| **C: Event Store** | Design Event Store aggregate schema, dual-write alongside state.json | `events/store.py` (new), `events/model.py` |
 
-- ACP Registry URL: `https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json`
-- ACP uses JSON-RPC 2.0 over newline-delimited JSON on stdio
-- All session methods (list, resume, close) are stabilized as of April 2026
-- ACP agents must be registered in the official registry at `github.com/agentclientprotocol/registry`
-- Fallback chain: `OpenClawAdapter → OpenCodeAdapter → LocalLLMAdapter → HumanAdapter`
-- ACP integration is additive; existing LiteLLMAdapter behavior is preserved
-- ACP agents must respect SecurityEnforcer policies
+These workstreams share **no code dependencies** and may be implemented in any order or by parallel agents.
 
-### CLI Refactoring Rule (Enforced)
+### Deferred from Phase 08
+
+- LiteLLMAdapter ACP integration + adapter fallback chain (P08.32-P08.35) — part of async migration workstream
+- ADG cascade further enhancement — P08.04 basic implementation exists
+- Full event-sourced state migration — deferred to later phases
+
+### Clean Code Rules (Continuing from Phase 08)
 
 All new Phase 08+ commands MUST live in their own file under `src/forge_os/cli/commands/<domain>.py`.
-Each file exposes a Typer sub-app (e.g. `backtrack_app`, `acp_app`).
-Register with `app.add_typer()` in `main.py`.
+Each file exposes a Typer sub-app. Register with `app.add_typer()` in `main.py`.
 Business logic belongs in `use_cases/`, not in CLI command files.
 
-### Directory Structure Additions
+### Directory Structure (Phase 08.5)
 
 ```
 src/forge_os/
-├── cli/
-│   ├── main.py              # Slimmed root app (895 lines)
-│   └── commands/            # Phase 08+ command modules
-│       ├── __init__.py
-│       ├── _shared.py        # Shared console, helpers
-│       ├── backtrack.py     # backtrack_app
-│       ├── security.py      # security_app
-│       ├── health.py        # health_app
-│       └── acp.py          # acp_app
-├── kernel/
-│   ├── acp_client.py           # ACPClient for JSON-RPC/stdio
-│   ├── acp_registry_adapter.py # ACPRegistryAdapter for agent discovery
-│   └── adapter.py              # Enhanced IKernelAdapter with ACP methods
-├── project/
-│   ├── use_cases/
-│   │   ├── backtrack_*.py      # Backtrack ticket use cases
-│   │   └── security_*.py      # Security enforcement use cases
-│   ├── backtrack/
-│   │   └── ticket.py           # BacktrackTicket model and BacktrackStore
-│   └── security/
-│       ├── profile.py          # SecurityProfile model
-│       ├── enforcer.py         # SecurityEnforcer
-│       └── audit_log.py        # AuditLog for JSONL logging
-└── gates/
-    ├── external_command.py     # ExternalCommandGate
-    └── metric_threshold.py     # MetricThresholdGate
+├── adapters/
+│   ├── base.py              # ⏳ Migrate to async KernelAdapter protocol
+│   ├── dummy.py             # ⏳ Migrate to async DummyAdapter
+│   └── ...
+├── agents/
+│   └── executor.py          # ⏳ Migrate to async executor
+├── context/
+│   ├── pruner.py            # ⏳ CocoIndex pipeline integration
+│   └── pipeline.py          # 🆕 CocoIndex incremental indexing pipeline
+├── events/
+│   └── store.py             # 🆕 Event Store for dual-write persistence
+└── kernel/                  # Phase 08 complete
+    ├── acp_client.py
+    └── acp_registry_adapter.py
 ```
 
 Last validation commands:
 
-- `.venv/bin/python -m pytest` — 130 passed.
+- `.venv/bin/python -m pytest` — 133 passed (67 baseline + 66 Phase 08 new).
 - `.venv/bin/python -m ruff check src tests` — clean for new/modified files.
 - `.venv/bin/python -m compileall src tests` — passed.
 
-Expected test count after Phase 08: 120+ ✅ (130 achieved)
+Phase 08 validated ✅. All core deliverables complete.

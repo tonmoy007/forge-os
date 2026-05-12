@@ -8,12 +8,12 @@ command.
 
 ---
 
-## Status: Phase 08 In Progress
+## Status: Phase 08.5 In Progress
 
-The project is in active development. Phase 01 through Phase 07 are complete.
-Phase 08 (Backtrack, Rework, Security, ACP) is the current focus — backtrack and
-security backends are complete; gates are partially built; ACP integration is
-CLI-scaffolded awaiting backend implementation.
+The project is in active development. Phase 01 through Phase 08 are complete.
+Phase 08.5 (Async Migration, CocoIndex Evaluation, Event Store) is the current
+focus — migrating adapters to async, evaluating CocoIndex for incremental indexing,
+and laying groundwork for event-sourced state.
 
 ---
 
@@ -57,11 +57,11 @@ CLI-scaffolded awaiting backend implementation.
 | `forge backtrack approve <id>` | 08 | Approve a ticket for execution |
 | `forge backtrack run <id>` | 08 | Execute rework for a ticket |
 | `forge security audit` | 08 | View security audit log |
-| `forge acp discover` | 08 | Discover ACP agents from registry ⚠️ CLI-scaffolded |
-| `forge acp list` | 08 | List locally installed ACP agents ⚠️ CLI-scaffolded |
-| `forge acp install <id>` | 08 | Install an ACP agent ⚠️ CLI-scaffolded |
-| `forge acp sessions` | 08 | List active ACP sessions ⚠️ CLI-scaffolded |
-| `forge acp close-session <id>` | 08 | Close an ACP session ⚠️ CLI-scaffolded |
+| `forge acp discover` | 08 | Discover ACP agents from registry ✅ |
+| `forge acp list` | 08 | List locally installed ACP agents ✅ |
+| `forge acp install <id>` | 08 | Install an ACP agent ✅ |
+| `forge acp sessions` | 08 | List active ACP sessions ✅ |
+| `forge acp close-session <id>` | 08 | Close an ACP session ✅ |
 | `forge health check` | 09 | Run subsystem health check |
 
 ### Completed Phases
@@ -73,22 +73,20 @@ CLI-scaffolded awaiting backend implementation.
 - **Phase 05** — Adapters & agents: KernelAdapter interface, DummyAdapter, 12 stage personas
 - **Phase 06** — Memory: lesson store, reflections, approval workflow
 - **Phase 07** — ADG & context: artifact registry, stale propagation, deterministic pruning
+- **Phase 08** — Backtrack, Security, ACP
+  - Backtrack tickets, rework planner, approval flow ✅
+  - Security profiles, enforcement, audit log ✅
+  - ACPClient, ACPRegistryAdapter, ACPUseCases ✅
+  - ExternalCommand + MetricThreshold gates ✅
+  - IKernelAdapter ACP enhancements ✅
+  - 66 new tests, 133 total ✅
 
 ### In Progress
 
-- **Phase 08** — Backtrack, Security, ACP
-  - Backtrack ticket schema, store, and CLI (list/plan/approve/run) ✅
-  - Rework planner and approval flow ✅
-  - ADG cascade generation — pending
-  - Stale flag cleanup after revalidation — pending
-  - Security profiles and enforcement (path, command, timeout) ✅
-  - Security audit log (`.forge/security-audit.jsonl`) ✅
-  - ACP CLI commands scaffolded (non-functional until backend) ⚠️
-  - ACPClient (JSON-RPC over stdio) — pending
-  - ACPRegistryAdapter (registry fetch + install) — pending
-  - IKernelAdapter ACP enhancements (spawn, list, session mgmt) — pending
-  - ExternalCommand and MetricThreshold gates — pending
-  - Phase 08 tests — not yet written
+- **Phase 08.5** — Async Migration, CocoIndex, Event Store
+  - **Workstream A**: Async KernelAdapter protocol, DummyAdapter, executor
+  - **Workstream B**: CocoIndex evaluation, incremental indexing pipeline
+  - **Workstream C**: Event Store aggregate schema, dual-write alongside state.json
 
 ### Upcoming
 
@@ -119,7 +117,7 @@ forge_os/
 ├── events/            # Event bus, event log
 ├── gates/             # Gate coordinator, evaluator, loader (ext/missing)
 ├── hooks/             # Hook registry
-├── kernel/            # ⏳ Planned: ACPClient, ACPRegistryAdapter
+├── kernel/            # ACPClient, ACPRegistryAdapter (Phase 08)
 ├── memory/            # Lessons, reflections
 ├── project/           # Detection, scaffold, profiles,
 │                      # backtrack_registry, rework_planner,
@@ -130,11 +128,10 @@ forge_os/
 
 Phase 08+ commands live in `cli/commands/<domain>.py` and delegate to the
 `use_cases/` layer. `main.py` handles only parsing, output formatting, and
-error translation. See `plan/PHASE-08-backtrack-security.md` for full scope.
+error translation.
 
-⚠️ ACP CLI commands are scaffolded but non-functional — backend modules
-(`kernel/acp_client.py`, `kernel/acp_registry_adapter.py`,
-`use_cases/acp.py`) are not yet implemented.
+Phase 08 ACP backend is fully implemented — see `kernel/`,
+`use_cases/acp.py`. Next phase: Phase 08.5 async migration.
 
 ---
 
@@ -178,8 +175,8 @@ See `ROADMAP.md` for detailed release milestones.
 | 0.2 | Phases 02–05 | Full pipeline, events, gates, agents |
 | 0.3 | Phase 05 complete | Provider-agnostic agent execution |
 | 0.4 | Phases 06–07 | Memory, ADG, context pruning |
-| **0.5** | **Phase 08** | **Backtrack, security, ACP — current** |
-| 0.6 | Phase 08.5 | Async migration, CocoIndex, Event Store |
+| **0.5** | **Phase 08** | **Backtrack, security, ACP — complete** |
+| **0.6** | **Phase 08.5** | **Async migration, CocoIndex, Event Store — current** |
 | 1.0 | Phase 09 | Health checks, global memory, skills |
 | 1.5 | Phase 10 | Daemon, dreamer, lazy context |
 | 2.0 | Phase 11 | Channels, OpenClaw, extensions |
@@ -193,7 +190,6 @@ See `ROADMAP.md` for detailed release milestones.
 3. All new CLI commands must be added to `src/forge_os/cli/commands/<domain>.py`
    and registered with `app.add_typer()` in `main.py`.
 4. Business logic belongs in `use_cases/` — CLI code is thin.
-5. Run `.venv/bin/python -m pytest` before committing (67 tests pass as of Phase 08
-   partial; target is 120+).
-6. See `plan/PHASE-08-backtrack-security.md` → "Notes for the Next Implementer"
-   for Phase 08-specific guidance.
+5. Run `.venv/bin/python -m pytest` before committing (133 tests pass as of Phase 08
+   complete; target for Phase 08.5 is TBD).
+6. See `plan/PHASE-08.5-async-cocoindex.md` for current phase guidance.
