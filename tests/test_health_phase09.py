@@ -143,3 +143,109 @@ class TestHealthUseCases:
         assert len(report) == 5
         for subsystem in report:
             assert "healthy" in report[subsystem]
+
+
+# ── Global Memory tests (P09.08) ────────────────────────────────────────────
+
+
+class TestGlobalLessonStore:
+    def test_load_empty(self) -> None:
+        from forge_os.memory.global_store import GlobalLessonStore
+
+        store = GlobalLessonStore()
+        doc = store.load()
+        assert doc.global_lessons == []
+        assert doc.usage == []
+
+    def test_promote_lesson(self) -> None:
+        from forge_os.memory.global_store import GlobalLessonStore
+        from forge_os.memory.models import Lesson
+
+        store = GlobalLessonStore()
+
+        lesson = Lesson(
+            text="Always use type hints",
+            confidence=0.9,
+            tags=["python", "types"],
+            created_at="2026-01-01T00:00:00Z",
+            updated_at="2026-01-01T00:00:00Z",
+        )
+        promoted = store.promote_lesson(lesson, "/projects/forge-os")
+        assert promoted.id is not None
+        assert promoted.status == "approved"
+
+        # Verify it persisted
+        doc2 = store.load()
+        assert len(doc2.global_lessons) >= 1
+
+    def test_promote_duplicate_by_text(self) -> None:
+        from forge_os.memory.global_store import GlobalLessonStore
+        from forge_os.memory.models import Lesson
+
+        store = GlobalLessonStore()
+        lesson = Lesson(
+            text="Dedup test lesson",
+            confidence=0.8,
+            tags=["test"],
+            created_at="2026-01-01T00:00:00Z",
+            updated_at="2026-01-01T00:00:00Z",
+        )
+        first = store.promote_lesson(lesson, "/projects/a")
+        second = store.promote_lesson(lesson, "/projects/b")
+        assert first.id == second.id  # Same lesson, not duplicated
+
+    def test_suggest_promotions_after_threshold(self) -> None:
+        from forge_os.memory.global_store import GlobalLessonStore
+        from forge_os.memory.models import Lesson
+
+        store = GlobalLessonStore()
+        lesson = Lesson(
+            text="Multi-project lesson",
+            confidence=0.8,
+            tags=["multi"],
+            created_at="2026-01-01T00:00:00Z",
+            updated_at="2026-01-01T00:00:00Z",
+        )
+        store.promote_lesson(lesson, "/projects/p1")
+        store.promote_lesson(lesson, "/projects/p2")
+        store.promote_lesson(lesson, "/projects/p3")
+
+        suggestions = store.suggest_promotions(min_projects=3)
+        assert len(suggestions) >= 1
+        assert suggestions[0]["usage_count"] >= 3
+
+    def test_usage_tracking(self) -> None:
+        from forge_os.memory.global_store import GlobalLessonStore
+        from forge_os.memory.models import Lesson
+
+        store = GlobalLessonStore()
+        lesson = Lesson(
+            text="Usage tracked lesson",
+            confidence=0.7,
+            tags=["usage"],
+            created_at="2026-01-01T00:00:00Z",
+            updated_at="2026-01-01T00:00:00Z",
+        )
+        promoted = store.promote_lesson(lesson, "/projects/my-project")
+        usage = store.get_usage(promoted.id)
+        assert usage is not None
+        assert usage.usage_count == 1
+        assert "/projects/my-project" in usage.project_paths
+
+
+class TestGlobalMemoryUseCases:
+    def test_promote_nonexistent_lesson_returns_none(self, tmp_path: Path) -> None:
+        from forge_os.use_cases.global_memory import GlobalMemoryUseCases
+
+        uc = GlobalMemoryUseCases(tmp_path)
+        result = uc.promote_lesson("nonexistent-id")
+        assert result is None
+
+    def test_list_global_lessons(self) -> None:
+        from pathlib import Path
+
+        from forge_os.use_cases.global_memory import GlobalMemoryUseCases
+
+        uc = GlobalMemoryUseCases(Path("/tmp"))
+        lessons = uc.list_global_lessons()
+        assert isinstance(lessons, list)
