@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from forge_os.health.acp import ACPHealthChecker
 from forge_os.health.adg import ADGHealthChecker
 from forge_os.health.checker import HealthChecker, HealthResult
@@ -149,19 +151,23 @@ class TestHealthUseCases:
 
 
 class TestGlobalLessonStore:
-    def test_load_empty(self) -> None:
+    @pytest.fixture
+    def forge_dir(self, tmp_path: Path) -> Path:
+        return tmp_path / ".forge"
+
+    def test_load_empty(self, forge_dir: Path) -> None:
         from forge_os.memory.global_store import GlobalLessonStore
 
-        store = GlobalLessonStore()
+        store = GlobalLessonStore(forge_dir)
         doc = store.load()
         assert doc.global_lessons == []
         assert doc.usage == []
 
-    def test_promote_lesson(self) -> None:
+    def test_promote_lesson(self, forge_dir: Path) -> None:
         from forge_os.memory.global_store import GlobalLessonStore
         from forge_os.memory.models import Lesson
 
-        store = GlobalLessonStore()
+        store = GlobalLessonStore(forge_dir)
 
         lesson = Lesson(
             text="Always use type hints",
@@ -174,15 +180,14 @@ class TestGlobalLessonStore:
         assert promoted.id is not None
         assert promoted.status == "approved"
 
-        # Verify it persisted
         doc2 = store.load()
         assert len(doc2.global_lessons) >= 1
 
-    def test_promote_duplicate_by_text(self) -> None:
+    def test_promote_duplicate_by_text(self, forge_dir: Path) -> None:
         from forge_os.memory.global_store import GlobalLessonStore
         from forge_os.memory.models import Lesson
 
-        store = GlobalLessonStore()
+        store = GlobalLessonStore(forge_dir)
         lesson = Lesson(
             text="Dedup test lesson",
             confidence=0.8,
@@ -192,13 +197,13 @@ class TestGlobalLessonStore:
         )
         first = store.promote_lesson(lesson, "/projects/a")
         second = store.promote_lesson(lesson, "/projects/b")
-        assert first.id == second.id  # Same lesson, not duplicated
+        assert first.id == second.id
 
-    def test_suggest_promotions_after_threshold(self) -> None:
+    def test_suggest_promotions_after_threshold(self, forge_dir: Path) -> None:
         from forge_os.memory.global_store import GlobalLessonStore
         from forge_os.memory.models import Lesson
 
-        store = GlobalLessonStore()
+        store = GlobalLessonStore(forge_dir)
         lesson = Lesson(
             text="Multi-project lesson",
             confidence=0.8,
@@ -214,11 +219,11 @@ class TestGlobalLessonStore:
         assert len(suggestions) >= 1
         assert suggestions[0]["usage_count"] >= 3
 
-    def test_usage_tracking(self) -> None:
+    def test_usage_tracking(self, forge_dir: Path) -> None:
         from forge_os.memory.global_store import GlobalLessonStore
         from forge_os.memory.models import Lesson
 
-        store = GlobalLessonStore()
+        store = GlobalLessonStore(forge_dir)
         lesson = Lesson(
             text="Usage tracked lesson",
             confidence=0.7,
@@ -237,15 +242,101 @@ class TestGlobalMemoryUseCases:
     def test_promote_nonexistent_lesson_returns_none(self, tmp_path: Path) -> None:
         from forge_os.use_cases.global_memory import GlobalMemoryUseCases
 
-        uc = GlobalMemoryUseCases(tmp_path)
+        uc = GlobalMemoryUseCases(tmp_path, forge_dir=tmp_path / ".forge")
         result = uc.promote_lesson("nonexistent-id")
         assert result is None
 
-    def test_list_global_lessons(self) -> None:
-        from pathlib import Path
-
+    def test_list_global_lessons(self, tmp_path: Path) -> None:
         from forge_os.use_cases.global_memory import GlobalMemoryUseCases
 
-        uc = GlobalMemoryUseCases(Path("/tmp"))
+        uc = GlobalMemoryUseCases(tmp_path, forge_dir=tmp_path / ".forge")
         lessons = uc.list_global_lessons()
         assert isinstance(lessons, list)
+
+
+# ── Project Profiles & Skill tests (P09.13-15) ────────────────────────────
+
+
+class TestProjectProfileStore:
+    @pytest.fixture
+    def forge_dir(self, tmp_path: Path) -> Path:
+        return tmp_path / ".forge"
+
+    def test_load_empty(self, forge_dir: Path) -> None:
+        from forge_os.memory.project_profiles import ProjectProfileStore
+
+        store = ProjectProfileStore(forge_dir)
+        doc = store.load()
+        assert doc.profiles == []
+
+    def test_upsert_new_profile(self, forge_dir: Path) -> None:
+        from forge_os.memory.project_profiles import ProjectProfileStore
+
+        store = ProjectProfileStore(forge_dir)
+        profile = store.upsert_profile(
+            "/projects/test",
+            languages=["python"],
+            frameworks=["pytest"],
+            tools=["ruff"],
+        )
+        assert profile.project_path == "/projects/test"
+        assert "python" in profile.languages
+
+        loaded = store.get_profile("/projects/test")
+        assert loaded is not None
+        assert "pytest" in loaded.frameworks
+
+    def test_upsert_merges_data(self, forge_dir: Path) -> None:
+        from forge_os.memory.project_profiles import ProjectProfileStore
+
+        store = ProjectProfileStore(forge_dir)
+        store.upsert_profile("/p1", languages=["python"])
+        store.upsert_profile("/p1", languages=["go"], tools=["gofmt"])
+
+        profile = store.get_profile("/p1")
+        assert profile is not None
+        assert "python" in profile.languages
+        assert "go" in profile.languages
+        assert "gofmt" in profile.tools
+
+    def test_add_pattern(self, forge_dir: Path) -> None:
+        from forge_os.memory.project_profiles import ProjectProfileStore
+
+        store = ProjectProfileStore(forge_dir)
+        store.add_pattern("/projects/test", "uses_fastapi")
+        store.add_pattern("/projects/test", "uses_fastapi")
+
+        profile = store.get_profile("/projects/test")
+        assert profile is not None
+        assert profile.patterns == ["uses_fastapi"]
+
+
+class TestSkillUseCases:
+    @pytest.fixture
+    def skill_uc(self, tmp_path: Path):
+        from forge_os.use_cases.skills import SkillUseCases
+        return SkillUseCases(tmp_path, forge_dir=tmp_path / ".forge")
+
+    def test_propose_and_list(self, skill_uc) -> None:
+        result = skill_uc.propose_skill("test-skill", "A test skill for testing")
+        assert result["status"] == "proposed"
+
+        skills = skill_uc.list_skills()
+        names = [s["name"] for s in skills]
+        assert "test-skill" in names
+
+    def test_approve_skill(self, skill_uc) -> None:
+        skill_uc.propose_skill("approve-me", "Skill to approve")
+        result = skill_uc.approve_skill("approve-me")
+        assert result["status"] == "approved"
+
+    def test_install_requires_approval(self, skill_uc) -> None:
+        skill_uc.propose_skill("install-test", "Skill for install test")
+        result = skill_uc.install_skill("install-test")
+        assert result["status"] == "not_approved"
+
+    def test_install_after_approval(self, skill_uc) -> None:
+        skill_uc.propose_skill("install-ok", "Skill to fully install")
+        skill_uc.approve_skill("install-ok")
+        result = skill_uc.install_skill("install-ok")
+        assert result["status"] == "installed"

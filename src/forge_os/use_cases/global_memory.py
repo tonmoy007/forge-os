@@ -12,9 +12,9 @@ from forge_os.memory.lessons import LessonStore
 class GlobalMemoryUseCases:
     """Business logic for global lesson promotion and usage tracking."""
 
-    def __init__(self, project_root: Path) -> None:
+    def __init__(self, project_root: Path, forge_dir: Path | None = None) -> None:
         self.project_root = project_root
-        self.global_store = GlobalLessonStore()
+        self.global_store = GlobalLessonStore(forge_dir=forge_dir)
         self.local_store = LessonStore(project_root)
 
     def list_global_lessons(self) -> list[dict[str, Any]]:

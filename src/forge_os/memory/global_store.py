@@ -45,8 +45,9 @@ def get_global_forge_dir() -> Path:
 class GlobalLessonStore:
     """Manage ~/.forge/memory.yaml — cross-project lessons and usage tracking."""
 
-    def __init__(self) -> None:
-        self.path = get_global_forge_dir() / "memory.yaml"
+    def __init__(self, forge_dir: Path | None = None) -> None:
+        base = forge_dir if forge_dir is not None else get_global_forge_dir()
+        self.path = base / "memory.yaml"
 
     def load(self) -> GlobalMemoryDocument:
         if not self.path.exists():
