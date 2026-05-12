@@ -340,3 +340,67 @@ class TestSkillUseCases:
         skill_uc.approve_skill("install-ok")
         result = skill_uc.install_skill("install-ok")
         assert result["status"] == "installed"
+
+
+# ── ACP Health tests (P09.18-22) ────────────────────────────────────────────
+
+
+class TestACPHealthUseCases:
+    def test_check_registry_no_cache(self, tmp_path: Path) -> None:
+        from forge_os.use_cases.acp_health import ACPHealthUseCases
+
+        uc = ACPHealthUseCases(tmp_path)
+        result = uc.check_registry_health()
+        assert "registry_cached" in result
+        assert result["registry_cached"] is False
+
+    def test_check_registry_with_cache(self, tmp_path: Path) -> None:
+        from forge_os.use_cases.acp_health import ACPHealthUseCases
+
+        cache_dir = tmp_path / ".forge" / "acp"
+        cache_dir.mkdir(parents=True)
+        import json
+        (cache_dir / "registry.json").write_text(json.dumps({"agents": []}))
+
+        uc = ACPHealthUseCases(tmp_path)
+        result = uc.check_registry_health()
+        assert result["registry_cached"] is True
+
+    def test_installed_agent_health_empty(self, tmp_path: Path) -> None:
+        from forge_os.use_cases.acp_health import ACPHealthUseCases
+
+        uc = ACPHealthUseCases(tmp_path)
+        agents = uc.check_installed_agent_health()
+        assert agents == []
+
+    def test_installed_agent_health_with_agents(self, tmp_path: Path) -> None:
+        from forge_os.use_cases.acp_health import ACPHealthUseCases
+
+        cache_dir = tmp_path / ".forge" / "acp"
+        cache_dir.mkdir(parents=True)
+        import json
+        (cache_dir / "installed.json").write_text(
+            json.dumps({"test-agent": {"id": "test-agent", "name": "Test Agent", "version": "1.0"}})
+        )
+
+        uc = ACPHealthUseCases(tmp_path)
+        agents = uc.check_installed_agent_health()
+        assert len(agents) == 1
+        assert agents[0]["agent_id"] == "test-agent"
+
+    def test_stale_session_detection(self, tmp_path: Path) -> None:
+        from forge_os.use_cases.acp_health import ACPHealthUseCases
+
+        uc = ACPHealthUseCases(tmp_path)
+        actions = uc.detect_and_clean_stale_sessions()
+        assert isinstance(actions, list)
+
+    def test_health_report_structure(self, tmp_path: Path) -> None:
+        from forge_os.use_cases.acp_health import ACPHealthUseCases
+
+        uc = ACPHealthUseCases(tmp_path)
+        report = uc.get_health_report()
+        assert "registry" in report
+        assert "agents" in report
+        assert "session_actions" in report
+        assert "healthy" in report
