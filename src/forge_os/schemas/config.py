@@ -5,6 +5,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SUPPORTED_PROFILES = {"minimal", "standard", "expert"}
+class ConfigError(Exception):
+    """Raised when a configuration error occurs."""
 
 
 class ProjectConfig(BaseModel):
@@ -50,12 +52,12 @@ class ForgeConfig(BaseModel):
     @classmethod
     def schema_version_must_be_present(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("schema_version is required")
+            raise ConfigError("Invalid Forge config. `schema_version` is required")
         return value
 
     @field_validator("default_adapter")
     @classmethod
     def default_adapter_must_be_present(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("default_adapter is required")
+            raise ConfigError("Invalid Forge config. `default_adapter` is required")
         return value

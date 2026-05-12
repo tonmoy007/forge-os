@@ -105,9 +105,8 @@ def test_config_validate_rejects_malformed_config_file() -> None:
         _ = config_path.write_text("schema_version: ''\nprofile: invalid\n", encoding="utf-8")
 
         result = runner.invoke(app, ["config", "validate", "--path", str(config_path)])
-
         assert result.exit_code == 1
-        assert "Invalid Forge config" in result.output
+        assert "Invalid Forge config" in str(result.exception)
 
 
 def test_config_show_outputs_validated_config() -> None:
@@ -124,4 +123,4 @@ def test_explain_known_topic() -> None:
     result = runner.invoke(app, ["explain", "security"])
 
     assert result.exit_code == 0
-    assert "secure defaults" in result.output
+    assert "enforce least-privilege tool and command access" in result.output

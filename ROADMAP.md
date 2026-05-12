@@ -1,6 +1,6 @@
 # Forge OS Roadmap
 
-## Release 0.1 — CLI MVP
+## Release 0.1 — CLI MVP ✅
 
 Target phases:
 
@@ -16,7 +16,7 @@ Outcome:
 - Move through minimal profile stages.
 - Block advancement on missing required files.
 
-## Release 0.2 — Standard Pipeline
+## Release 0.2 — Standard Pipeline ✅
 
 Target phases:
 
@@ -33,7 +33,7 @@ Outcome:
 - `DummyAdapter` foundation.
 - Adapter config placeholders for selected adapter order.
 
-## Release 0.3 — Agent Execution
+## Release 0.3 — Agent Execution ✅
 
 Target phases:
 
@@ -46,7 +46,7 @@ Outcome:
 - `DummyAdapter` stable.
 - First real adapter work starts with `ClaudeCodeAdapter` after Phase 05 is stable.
 
-## Release 0.4 — Memory and ADG
+## Release 0.4 — Memory and ADG ✅
 
 Target phases:
 
@@ -59,17 +59,28 @@ Outcome:
 - Artifact dependency graph.
 - Staleness and context pruning.
 
-## Release 0.5 — Quality and Security
+## Release 0.5 — Quality and Security 🔨 (In Progress)
 
 Target phases:
 
-- Phase 08
+- Phase 08 (Backtrack, Security, ACP)
 
 Outcome:
 
-- Backtrack and rework planning.
-- External command/metric gates.
-- Security profiles and audit logs.
+- Backtrack ticket schema, YAML store, and CLI (list/plan/approve/run) ✅
+- Rework planner with approval flow ✅
+- ADG cascade generation — pending
+- Stale flag cleanup after revalidation — pending
+- Security profiles (YAML-defined, path/command restrictions) ✅
+- Security enforcer with timeouts and audit logging ✅
+- Security audit log (`.forge/security-audit.jsonl`) ✅
+- ACP CLI commands scaffolded (discover/list/install/sessions/close-session) ⚠️
+- ACPClient (JSON-RPC over stdio) — pending
+- ACPRegistryAdapter (registry fetch + agent install) — pending
+- IKernelAdapter ACP enhancements (spawn, list, session mgmt) — pending
+- ExternalCommand gate — pending
+- MetricThreshold gate — pending
+- Phase 08-specific tests — not yet written
 
 ## Release 1.0 — Stable Local Forge OS
 

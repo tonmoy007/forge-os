@@ -97,7 +97,9 @@ EXPLAIN_TOPICS: dict[str, str] = {
     "profiles": "Built-in Phase 01 profiles are `minimal`, `standard`, and `expert`.",
     "security": (
         "Phase 01 uses secure defaults: local-only operation, no provider credentials, "
-        "hooks disabled, no arbitrary command execution, and no network requirement."
+        "hooks disabled, no arbitrary command execution, and no network requirement. "
+        "Phase 08 adds YAML-defined security profiles with path restrictions, command "
+        "allowlists, timeouts, and an append-only `.forge/security-audit.jsonl` log."
     ),
     "stage": (
         "Phase 02 stage commands support deterministic list, start, complete, advance, "
@@ -139,10 +141,6 @@ EXPLAIN_TOPICS: dict[str, str] = {
     "backtrack": (
         "Phase 08 backtrack tickets track rework requests. Use `forge backtrack list` "
         "to see tickets and `forge backtrack plan <id>` to see the affected cascade."
-    ),
-    "security": (
-        "Phase 08 security profiles enforce least-privilege tool and command access. "
-        "Use `forge security audit` to view the audit log."
     ),
     "acp": (
         "Phase 08 ACP integration lets Forge OS discover and spawn ACP-compatible agents "

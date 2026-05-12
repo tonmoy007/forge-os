@@ -1,239 +1,197 @@
-# Forge OS: A Self‑Sustaining, Adaptive Software Engineering Ecosystem
+# Forge OS
 
-Forget the plugin. Imagine an **independent operating system for software creation** — not an IDE, not a CI/CD toolchain, not an AI wrapper — but a living, learning, and self‑improving ecosystem that any developer can adopt. Forge OS is the culmination of the abstract architecture, built to evolve, to sustain itself, and to reduce complexity rather than add to it.
-
----
-
-## 1. Core Principles That Defeat Complexity
-
-> Complexity is not the presence of many parts; it’s the absence of clarity in how they connect.  
-> Forge OS solves complexity by making every relationship explicit, every process auditable, and every component replaceable.
-
-- **Modularity by Contract** – Every component (agents, gates, evaluators, memory stores) communicates through well‑defined interfaces. They can be hot‑swapped.
-- **Kernel Agnosticism** – An abstract `KernelAdapter` layer decouples the system from any specific AI provider. Claude, Codex, OSS models, even human‑only “kernels” — all plug in the same way.
-- **Gradual Onboarding** – The full 12‑stage pipeline is there, but a user can start with a three‑stage “minimal viable flow” and incrementally activate more stages as needed.
-- **Self‑Maintenance** – The system monitors its own health, detects stale knowledge, and proposes improvements to itself without external scripts.
-- **Open by Default** – Forge OS uses open formats (YAML, JSON, Markdown, GraphML for dependencies) so no part is a black box.
+**Forge OS** is a local-first, lifecycle-aware software engineering CLI that
+orchestrates a deterministic 12-stage SDLC pipeline. It enforces quality gates,
+manages artifact dependencies, learns from past mistakes, and can spawn AI agents
+through a provider-agnostic adapter interface — all from a single `forge`
+command.
 
 ---
 
-## 2. Architectural Layers
+## Status: Phase 08 In Progress
+
+The project is in active development. Phase 01 through Phase 07 are complete.
+Phase 08 (Backtrack, Rework, Security, ACP) is the current focus — backtrack and
+security backends are complete; gates are partially built; ACP integration is
+CLI-scaffolded awaiting backend implementation.
+
+---
+
+## What's Working Today
+
+### CLI Commands
+
+| Command | Phase | Description |
+|---------|-------|-------------|
+| `forge init` | 01 | Initialize a Forge project (minimal/standard/expert) |
+| `forge status` | 01 | Show project name, profile, stage, stale artifacts |
+| `forge config show` | 01 | Print validated config as YAML |
+| `forge config validate` | 01 | Validate a config file or project config |
+| `forge explain <topic>` | 01 | Explain a Forge OS concept |
+| `forge stage list` | 02 | List all pipeline stages |
+| `forge stage start <id>` | 02 | Start a stage |
+| `forge stage complete <id>` | 02 | Mark a stage complete |
+| `forge stage advance` | 02 | Complete active stage, start next |
+| `forge stage override <id>` | 02 | Force a stage with an audit reason |
+| `forge events list` | 03 | List lifecycle events |
+| `forge events tail -n N` | 03 | Tail the last N events |
+| `forge gate list` | 04 | List configured gates |
+| `forge gate check <stage>` | 04 | Evaluate gates for a stage |
+| `forge gate report` | 04 | Render a readable gate report |
+| `forge adapter list` | 05 | Show adapter priority and status |
+| `forge agent list` | 05 | List built-in and project personas |
+| `forge agent contracts` | 05 | List output contracts |
+| `forge agent run` | 05 | Run the stage agent |
+| `forge lesson list` | 06 | List project lessons |
+| `forge lesson add <text>` | 06 | Add a manual lesson |
+| `forge lesson approve <id>` | 06 | Approve a pending lesson |
+| `forge lesson deprecate <id>` | 06 | Deprecate a lesson |
+| `forge reflection list` | 06 | List stored reflections |
+| `forge reflection show <id>` | 06 | Show one reflection as YAML |
+| `forge artifact list` | 07 | List registered artifacts |
+| `forge artifact register <path>` | 07 | Register an artifact |
+| `forge artifact refresh` | 07 | Refresh artifact hashes |
+| `forge context select <stage>` | 07 | Deterministic context pruning |
+| `forge backtrack list` | 08 | List backtrack tickets |
+| `forge backtrack plan <id>` | 08 | Show rework plan for a ticket |
+| `forge backtrack approve <id>` | 08 | Approve a ticket for execution |
+| `forge backtrack run <id>` | 08 | Execute rework for a ticket |
+| `forge security audit` | 08 | View security audit log |
+| `forge acp discover` | 08 | Discover ACP agents from registry ⚠️ CLI-scaffolded |
+| `forge acp list` | 08 | List locally installed ACP agents ⚠️ CLI-scaffolded |
+| `forge acp install <id>` | 08 | Install an ACP agent ⚠️ CLI-scaffolded |
+| `forge acp sessions` | 08 | List active ACP sessions ⚠️ CLI-scaffolded |
+| `forge acp close-session <id>` | 08 | Close an ACP session ⚠️ CLI-scaffolded |
+| `forge health check` | 09 | Run subsystem health check |
+
+### Completed Phases
+
+- **Phase 01** — CLI scaffold: init, status, config, explain
+- **Phase 02** — State machine: 12-stage pipeline, atomic writes, event logging
+- **Phase 03** — Lifecycle events: normalized JSONL, in-process event bus
+- **Phase 04** — Gates: file/pattern gates, severity, reports, advancement enforcement
+- **Phase 05** — Adapters & agents: KernelAdapter interface, DummyAdapter, 12 stage personas
+- **Phase 06** — Memory: lesson store, reflections, approval workflow
+- **Phase 07** — ADG & context: artifact registry, stale propagation, deterministic pruning
+
+### In Progress
+
+- **Phase 08** — Backtrack, Security, ACP
+  - Backtrack ticket schema, store, and CLI (list/plan/approve/run) ✅
+  - Rework planner and approval flow ✅
+  - ADG cascade generation — pending
+  - Stale flag cleanup after revalidation — pending
+  - Security profiles and enforcement (path, command, timeout) ✅
+  - Security audit log (`.forge/security-audit.jsonl`) ✅
+  - ACP CLI commands scaffolded (non-functional until backend) ⚠️
+  - ACPClient (JSON-RPC over stdio) — pending
+  - ACPRegistryAdapter (registry fetch + install) — pending
+  - IKernelAdapter ACP enhancements (spawn, list, session mgmt) — pending
+  - ExternalCommand and MetricThreshold gates — pending
+  - Phase 08 tests — not yet written
+
+### Upcoming
+
+- **Phase 09** — Health checks, global memory, skill mining, ACP agent health
+- **Phase 10** — Daemon, dreamer, lazy context builder
+- **Phase 11** — Channel adapters, OpenClaw, extension/plugin system
+
+---
+
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                   USER INTERFACE                         │
-│  CLI, IDE extension, web dashboard, voice, or script     │
-└───────────────────────────┬─────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────┐
-│                  ORCHESTRATION ENGINE                    │
-│  • Session Manager (lifecycle hooks)                     │
-│  • Stage State Machine (12 stages + custom)             │
-│  • Workflow Dispatcher (selects & spawns agents)        │
-│  • Gate Coordinator (multi-modal evaluation)            │
-└───────────────────────────┬─────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────┐
-│                 KERNEL ADAPTER LAYER                     │
-│  • Kernel Interface (spawn, prompt, tool‑use, stop)     │
-│  • Implementations: Claude, GPT, OpenCode, human, …     │
-└───────────────────────────┬─────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────┐
-│               AI KERNELS (Plugins)                       │
-└─────────────────────────────────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────┐
-│              MEMORY & LEARNING SUBSYSTEM                 │
-│  • Tier 1 (Session) – Context window injection           │
-│  • Tier 2 (Project) – Pipeline artifacts, lessons        │
-│  • Tier 3 (Cross‑Project) – Global knowledge graph       │
-│  • Learning Services (Reflection, Extraction, Mining)    │
-│  • Knowledge Graph (lessons, dependencies, constraints)  │
-└───────────────────────────┬─────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────┐
-│             HEALTH & SUSTAINABILITY DAEMON               │
-│  • Self‑testing (hook tests, gate simulations)           │
-│  • Knowledge pruning & deduplication                     │
-│  • Backtrack detection & rework automation               │
-│  • Performance & token budget monitoring                 │
-└─────────────────────────────────────────────────────────┘
+forge_os/
+├── adapters/          # KernelAdapter implementations (DummyAdapter, registry)
+├── agents/            # Personas, output contracts, executor
+├── cli/               # Typer CLI
+│   ├── main.py        # Root app (895 lines)
+│   ├── commands/      # Phase 08+ command modules
+│   │   ├── backtrack.py  # forge backtrack CLI
+│   │   ├── security.py   # forge security CLI
+│   │   ├── health.py     # forge health CLI (Phase 09 scaffold)
+│   │   └── acp.py        # forge acp CLI (scaffolded, backend pending)
+│   └── _shared.py     # Shared console and project resolution
+├── config/            # Config loading and validation
+├── context/           # Artifact registry, ADG, context pruning
+├── core/              # StateManager, atomic writes, transitions
+├── events/            # Event bus, event log
+├── gates/             # Gate coordinator, evaluator, loader (ext/missing)
+├── hooks/             # Hook registry
+├── kernel/            # ⏳ Planned: ACPClient, ACPRegistryAdapter
+├── memory/            # Lessons, reflections
+├── project/           # Detection, scaffold, profiles,
+│                      # backtrack_registry, rework_planner,
+│                      # security_enforcer, security_audit
+├── schemas/           # Pydantic models (state, config, backtrack, security)
+└── use_cases/         # Business logic (backtrack, security, gates)
 ```
 
-Everything sits on a **distributed filesystem and event bus** — no central server required for single‑user mode, but the design scales to teams via a shared repo and event log.
+Phase 08+ commands live in `cli/commands/<domain>.py` and delegate to the
+`use_cases/` layer. `main.py` handles only parsing, output formatting, and
+error translation. See `plan/PHASE-08-backtrack-security.md` for full scope.
+
+⚠️ ACP CLI commands are scaffolded but non-functional — backend modules
+(`kernel/acp_client.py`, `kernel/acp_registry_adapter.py`,
+`use_cases/acp.py`) are not yet implemented.
 
 ---
 
-## 3. Plugging the Improvements: How Each Challenge Becomes a Feature
+## Quick Start
 
-### 3.1 Smart Context & Dependency Graph
+```bash
+# Install
+pip install .
 
-**Problem:** Agents receive too much irrelevant info or miss critical upstream decisions.  
-**Solution:** An explicit **Artifact Dependency Graph** (ADG) stored alongside the pipeline.
+# Initialize a project
+forge init --path ./my-project --profile minimal
 
-- Format: `pipeline/dependencies.graphml` (or JSON)
-- Each artifact (SRS, architecture, spec, task DAG, etc.) declares its prerequisites.
-- The Context Pruner traverses the graph from the current stage backward, collecting only the artifacts needed to satisfy the current activity, respecting token budgets.
-- When an artifact changes (e.g., architecture update), the graph flags all downstream artifacts that “may be stale,” enabling **precise backtrack triggers**.
+cd ./my-project
 
-**Implementation:**  
-A `pruner` service that uses a spread‑activation algorithm: start from the stage’s required artifacts, expand one hop, rank by relevance, and stop at the token limit. Everything is deterministic; no AI hallucination involved in selecting context.
+# Walk through the pipeline
+forge stage list
+forge stage start spec
+forge stage complete spec
+forge stage advance
 
-### 3.2 Lessons as a Knowledge Graph, Not a Flat List
+# Check gates
+forge gate check build
+forge gate report
 
-**Problem:** Flat lesson files become noisy, contradictory, and lack structure.  
-**Solution:** Transform `tasks/lessons.md` into a **Lessons Knowledge Graph** (LKG) where each lesson is a node with:
+# Run an agent
+forge agent run
 
-- **Confidence** (0‑1): based on user explicit confirmation, frequency, and recency.
-- **Applicability Tags**: stage, project type, trigger keywords, dependency on other lessons.
-- **Decay Function**: a lesson not used or verified in 6 months loses confidence gradually.
-- **Conflicts**: if two lessons suggest opposite actions, the graph logs the conflict; a human (or meta‑agent) resolves it.
-
-The LKG can answer queries like “when working on Stage 6 with T4 GPU, what are the top 3 high‑confidence lessons?” – making context injection precise.
-
-**Implementation:**  
-Use a simple graph database (e.g., SQLite with JSON extensions, or a library like `networkx` persisted in YAML). The lesson extractor now creates nodes and edges (causes, dependencies). The pruning engine queries the graph, not a flat file.
-
-### 3.3 Multi‑Modal Quality Evaluation Gates
-
-**Problem:** LLM‑only gate checks are blind to real correctness (tests, lint, type safety).  
-**Solution:** Each gate criterion can be of type:
-
-- **FileExistence** – “does `architecture.md` exist?”
-- **PatternMatch** – “does the design system file contain no raw hex colors?”
-- **LLMReview** – “does the Reflector assess the artifact as meeting quality X?”
-- **ExternalCommand** – “run `pytest`, exit code 0 and coverage > 80%”
-- **MetricThreshold** – “Lighthouse score > 90, bundle size < 200KB”
-
-Gates become a **composite evaluation**. The Gate Coordinator dispatches these checks, some asynchronous, and aggregates results.
-
-**Sustainability:**  
-The health daemon tracks which gate types catch real bugs and which are just noise. It can **auto‑tune gate weights** for a project — if a gate never fails, it might be demoted to “advisory” rather than blocking.
-
-### 3.4 Backtrack & Rework Automation
-
-**Problem:** A bug found in production (Stage 9) should update the SRS (Stage 1) and re‑validate all downstream artifacts. This is currently implicit.  
-**Solution:** A dedicated **Feed‑Forward Propagation Engine** that listens on the event bus:
-
-- When a `Feedback` or `Resolve` stage produces a “change request” (e.g., “SRS‑001 missing edge case”), it opens a **backtrack ticket**.
-- The engine uses the ADG to determine which artifacts are affected by this upstream change and creates a **rework cascade**: a list of stages that need to be re‑visited, ordered by dependency.
-- The user can approve a cascade; the system then re‑launches the corresponding stage agents with the updated context and a “rework mode” flag (which focuses on diff‑based changes rather than full regeneration).
-
-**Complexity management:**  
-Rework is scary, but the ADG makes it predictable and scoped. Without ADG, backtrack is chaos; with ADG, it’s just another workflow.
-
-### 3.5 Continuous Self‑Testing (Pipeline Health)
-
-**Problem:** Over time, hooks break, scripts become incompatible, and no one notices until a stage fails.  
-**Solution:** Forge OS includes a **Health Daemon** that runs on schedule or on every session start:
-
-- **Hook Unit Tests**: For each hook script, a test harness feeds mock events (using the Kernel Adapter mock) and checks output, exit codes, and side effects.
-- **Gate Simulation**: For each stage, run all gate criteria against a “golden set” of known‑good and known‑bad artifacts to verify that the gate checker passes/fails correctly.
-- **Knowledge Integrity**: Scan the LKG for conflicts, very low confidence lessons, or lessons that reference non‑existent artifacts.
-- **Token Budget Audits**: Measure actual context injection sizes and warn if they exceed the budget.
-
-When a test fails, the Health Daemon logs a **system health issue** and can optionally notify the user or even attempt a self‑repair (by reverting recent changes or proposing a fix). This turns the pipeline from a passive artifact into an actively maintained system.
-
-### 3.6 Formal Kernel Adapter Interface
-
-**Problem:** Without a clear abstraction, the system is tied to one AI vendor.  
-**Solution:** Define a minimal, language‑agnostic `KernelAdapter` interface:
-
-```
-interface KernelAdapter:
-    def spawn_agent(persona: AgentDefinition, context: str, tools: ToolList) -> AgentHandle
-    def on_event(event: LifecycleEvent, session: SessionState) -> EventResponse
-    def get_default_tools() -> ToolList
+# View health
+forge health check
 ```
 
-Implementations:  
-- `ClaudeCodeAdapter` (maps to the plugin hooks we already designed)  
-- `OpenAIAdapter` (uses completions with tool‑calling)  
-- `LocalLLMAdapter` (wraps llama.cpp or similar)  
-- `HumanAdapter` (allows a user to manually play the role of an agent, for extreme debugging)
+---
 
-The Orchestration Engine speaks only to the adapter. This makes the ecosystem future‑proof.
+## Roadmap
 
-### 3.7 Gradual Adaptation & Onboarding
+See `ROADMAP.md` for detailed release milestones.
 
-Complexity is the enemy of adoption. To avoid overwhelming users:
-
-- **Profile Levels**:  
-  - `minimal` – only SRS → Build → Deploy (3 stages). Hooks and lessons activate but are largely invisible.  
-  - `standard` – the full 12 stages but with default gates.  
-  - `expert` – unlocks custom stage definitions, fine‑tuned gates, and the meta‑improvement tools.
-- **Onboarding Wizard**: On first run (`forge init`), detects project type and suggests a profile. It then walks the user through the first cycle with extra explanations, and every gate pass explains *why*.
-- **Gradual Unlock**: Features like skill mining and backtrack are dormant until the user has completed two full cycles, after which a “Forge Growth” report suggests activating those advanced features.
-- **Documentation is Live**: Every artifact, gate, and lesson can be inspected via commands like `forge explain gate 6` or `forge lesson list`, reducing reliance on external manuals.
+| Release | Target | Outcome |
+|---------|--------|---------|
+| 0.1 | Phases 01–02, 04 partial | Init, status, stages, basic gates |
+| 0.2 | Phases 02–05 | Full pipeline, events, gates, agents |
+| 0.3 | Phase 05 complete | Provider-agnostic agent execution |
+| 0.4 | Phases 06–07 | Memory, ADG, context pruning |
+| **0.5** | **Phase 08** | **Backtrack, security, ACP — current** |
+| 1.0 | Phase 09 | Health checks, global memory, skills |
+| 1.5 | Phase 10 | Daemon, dreamer, lazy context |
+| 2.0 | Phase 11 | Channels, OpenClaw, extensions |
 
 ---
 
-## 4. System Sustainability: The System That Takes Care of Itself
+## Contributing
 
-A sustainable ecosystem is one that doesn’t rot. Forge OS achieves this through **meta‑management cycles**:
-
-- **Weekly Health Report**: Generated by the Health Daemon (section 3.5), summarizing hook test results, knowledge graph conflicts, and token budget overruns. The user can set auto‑fix policies for low‑risk issues.
-- **Knowledge Lifecycle Management**:  
-  - Lessons not used in 90 days are marked “dormant” and are not injected into context.  
-  - If a lesson has high confidence but low usage, it might be too specific; the system suggests a review.  
-  - Duplicate lessons (semantically similar) are merged with user confirmation.
-- **Skill Library Curator**: The Skill Miner (which originally proposed skills) now also monitors skill usage. If a skill is never invoked or is often overridden by the user, it is flagged for retirement. This prevents skill bloat.
-- **Adaptive Stage Evolution**: The pipeline configuration (`pipeline/stages.yaml`) can be versioned. After a full cycle, the system can propose changes (e.g., “Stage 7’s gate `test-coverage` passed every time but Stage 9 often caught bugs that could have been caught earlier; consider adding a static analysis gate to Stage 6”). These proposals are presented as merge requests.
-- **Community & Extensions**: By defining clear extension points (custom agents, custom gates, project profiles, kernel adapters), anyone can contribute. A decentralized “Forgeforge” (like Homebrew or npm) can distribute extensions. The ecosystem grows without the core needing to change.
-
----
-
-## 5. Managing Complexity: The Forge OS “Constitution”
-
-To ensure the system never becomes a tangle, we impose strict **architectural rules**:
-
-1. **Every component is replaceable.** If a piece can’t be swapped out, it’s not well‑defined.
-2. **Data is owned, not hidden.** Artifacts are files in a repo. The knowledge graph is an open format. No proprietary databases.
-3. **Decisions are recorded as ADRs (Architecture Decision Records).** Even the system’s own evolution decisions are logged in `pipeline/decisions/`, making it possible to understand why a gate or profile was introduced.
-4. **Failure to a safe state.** A gate that can’t execute defaults to “warn” not “block” — never prevents progress due to a bug in the test.
-5. **Human is always the final authority.** Automation never overrides an explicit user command.
-
----
-
-## 6. Implementation Roadmap (Community‑Buildable)
-
-For an independent ecosystem to materialize, a phased approach is essential.
-
-### Phase 0: Core Spec & Adapter
-- Define the formal `KernelAdapter` spec, stage schema, gate schema, and artifact dependency graph spec.
-- Build a reference implementation of the Orchestration Engine (Python/Node) that can be run locally.
-- Create a simple CLI (`forge`) that uses a human adapter (no AI needed initially) to validate the pipeline logic.
-
-### Phase 1: Basic SDLC with One Kernel
-- Implement the 12 stages as plain scripts or AI agents through a Claude or OpenAI adapter.
-- Gate checking with file‑existence and simple pattern matching.
-- Session memory (Tier 1) and project memory (Tier 2) as files.
-- Gradual onboarding (minimal profile).
-
-### Phase 2: Learning Layer & ADG
-- Add the Artifact Dependency Graph.
-- Implement the Lesson Extractor and reflector with simple prompts.
-- Build the Lessons Knowledge Graph and pruner.
-- Introduce back‑track light: manual rework cascades suggested by the system.
-
-### Phase 3: Full Self‑Improvement
-- Skill Miner, Health Daemon, and continuous testing.
-- Multi‑modal gates with external command integration.
-- Auto‑tuning of gate weights and lesson confidence.
-- Global cross‑project memory (Tier 3).
-
-### Phase 4: Ecosystem & Community
-- Standardize extension format (custom stages, agents, profiles).
-- Forgeforge package manager.
-- Web dashboard for team use.
-
----
-
-## 7. Final Thought: The Un‑Plugged Vision
-
-Forge OS, as an independent ecosystem, is not a tool — it’s a shift in how software is born. It remembers so you don’t have to. It enforces quality not through discipline but through automatic checkpoints. It grows smarter with every project, not because you told it to, but because it listened.
-
-And because it is built on open interfaces and gradual complexity, an enthusiastic user can start with a three‑stage flow on a Sunday afternoon and, years later, find themselves orchestrating a self‑improving engineering organisation — without ever feeling lost.
-
-The missing dots are connected. The complexity is solved by clarity. And the system sustains itself because it was designed not just to build software, but to build *its own future*.
+1. Read `plan/PHASE-XX-*.md` for the phase you want to work on.
+2. Read `BUILD_SPEC.md` for package layout and tooling conventions.
+3. All new CLI commands must be added to `src/forge_os/cli/commands/<domain>.py`
+   and registered with `app.add_typer()` in `main.py`.
+4. Business logic belongs in `use_cases/` — CLI code is thin.
+5. Run `.venv/bin/python -m pytest` before committing (67 tests pass as of Phase 08
+   partial; target is 120+).
+6. See `plan/PHASE-08-backtrack-security.md` → "Notes for the Next Implementer"
+   for Phase 08-specific guidance.

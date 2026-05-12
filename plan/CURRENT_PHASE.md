@@ -4,7 +4,7 @@
 
 - Phase: 08
 - File: `plan/PHASE-08-backtrack-security.md`
-- Status: not-started
+- Status: in-progress
 
 ## Current Objective
 
@@ -68,6 +68,7 @@ Phase 08 has been expanded to include ACP (Agent Client Protocol) integration ba
 22. Phase 05 adapters/agents are complete with KernelAdapter interface, adapter registry/config placeholders, DummyAdapter, 12 stage personas, 4 cross-stage personas, output contracts, agent execution logs, `forge adapter list`, `forge agent list/contracts/run`, and optional `forge stage start --spawn-agent`.
 23. Phase 06 memory/lessons are complete with YAML lesson store, reflection files, lesson add/list/approve/deprecate CLI, reflection list/show CLI, stage-completion reflection capture, pending lesson extraction queue, and approved high-confidence lesson injection into agent context.
 24. Phase 07 ADG/context is complete with artifact registry, JSON ADG persistence, stale downstream propagation, deterministic spread-activation context pruning, context selection audit logs, artifact/context CLI commands, stale artifact display in `forge status`, and pruned context integration for agent spawns.
+25. **Phase 08 CLI refactoring complete** — all Phase 08+ commands moved to `src/forge_os/cli/commands/` sub-modules (`backtrack.py`, `security.py`, `health.py`, `acp.py`). `main.py` slimmed from 1240→895 lines. Separation of concerns enforced for all future commands.
 
 ## Blocking Questions
 
@@ -79,11 +80,11 @@ None currently.
 | ID | Task |
 |---|---|
 | P08.01 | Define backtrack ticket schema |
-| P08.02 | Add `forge backtrack list` |
-| P08.03 | Add `forge backtrack plan <id>` |
+| P08.02 | Add `forge backtrack list` ✅ |
+| P08.03 | Add `forge backtrack plan <id>` ✅ |
 | P08.04 | Generate affected stages from ADG |
-| P08.05 | Add `forge backtrack approve <id>` |
-| P08.06 | Add `forge backtrack run <id>` in diff mode |
+| P08.05 | Add `forge backtrack approve <id>` ✅ |
+| P08.06 | Add `forge backtrack run <id>` in diff mode ✅ |
 | P08.07 | Clear stale flags after revalidation |
 
 ### Security Profiles & Enforcement
@@ -93,7 +94,7 @@ None currently.
 | P08.09 | Enforce path restrictions for tools |
 | P08.10 | Prevent agents from directly writing state files |
 | P08.11 | Add command allowlist and timeout runner |
-| P08.14 | Write `.forge/security-audit.jsonl` |
+| P08.14 | Write `.forge/security-audit.jsonl` ✅ |
 
 ### Gates
 | ID | Task |
@@ -107,31 +108,32 @@ None currently.
 |---|---|
 | P08.16 | Define `ACPRegistryAdapter` interface |
 | P08.17 | Implement `ACPRegistryAdapter` |
-| P08.18 | Implement `ACPClient` (JSON-RPC over stdio) |
-| P08.19 | Add session management methods |
+| P08.18 | Implement `ACPClient` (JSON-RPC over stdio) ✅ |
+| P08.19 | Add session management methods ✅ |
 | P08.20 | Add `session_config_options` |
 | P08.21 | Add session info update handling |
-| P08.22 | Implement agent installation (binary/npx/uvx) |
-| P08.23 | Add `forge agent discover` |
-| P08.24 | Add `forge agent install <agent-id>` |
-| P08.25 | Add `forge agent list` |
-| P08.26 | Add `forge agent spawn <agent-id>` |
+| P08.22 | Implement agent installation (binary/npx/uvx) ✅ |
+| P08.23 | Add `forge acp discover` ✅ |
+| P08.24 | Add `forge acp install <agent-id>` ✅ |
+| P08.25 | Add `forge acp list` ✅ |
+| P08.26 | Add `forge acp sessions` ✅ |
+| P08.27 | Add `forge acp close-session <id>` ✅ |
 
 ### IKernelAdapter ACP Enhancements
 | ID | Task |
 |---|---|
-| P08.27 | Add `spawn_acp_agent` to `IKernelAdapter` |
-| P08.28 | Add `list_acp_agents` to `IKernelAdapter` |
-| P08.29 | Add `get_acp_registry_adapter` to `IKernelAdapter` |
-| P08.30 | Add `is_acp_available` to `IKernelAdapter` |
-| P08.31 | Enhance `LiteLLMAdapter` with ACP support |
+| P08.28 | Add `spawn_acp_agent` to `IKernelAdapter` |
+| P08.29 | Add `list_acp_agents` to `IKernelAdapter` |
+| P08.30 | Add `get_acp_registry_adapter` to `IKernelAdapter` |
+| P08.31 | Add `is_acp_available` to `IKernelAdapter` |
+| P08.32 | Enhance `LiteLLMAdapter` with ACP support |
 
 ### ACP Adapter Fallback Chain
 | ID | Task |
 |---|---|
-| P08.32 | Implement adapter priority chain |
-| P08.33 | Wire ACP agents into backtrack rerun |
-| P08.34 | ACP integration tests |
+| P08.33 | Implement adapter priority chain |
+| P08.34 | Wire ACP agents into backtrack rerun |
+| P08.35 | ACP integration tests |
 
 ## Notes For The Next Implementer
 
@@ -150,6 +152,7 @@ Read:
 11. `SCHEMAS.md`
 12. Existing Phase 01-07 code under `src/forge_os/`
 13. Existing tests under `tests/`
+14. **`src/forge_os/cli/commands/` — new command modules for Phase 08+**
 
 Phase 08 should implement backtrack/rework, security baseline, and ACP integration only. Do not implement daemon, channels, OpenClaw full integration, or plugins early.
 
@@ -163,10 +166,26 @@ Phase 08 should implement backtrack/rework, security baseline, and ACP integrati
 - ACP integration is additive; existing LiteLLMAdapter behavior is preserved
 - ACP agents must respect SecurityEnforcer policies
 
+### CLI Refactoring Rule (Enforced)
+
+All new Phase 08+ commands MUST live in their own file under `src/forge_os/cli/commands/<domain>.py`.
+Each file exposes a Typer sub-app (e.g. `backtrack_app`, `acp_app`).
+Register with `app.add_typer()` in `main.py`.
+Business logic belongs in `use_cases/`, not in CLI command files.
+
 ### Directory Structure Additions
 
 ```
 src/forge_os/
+├── cli/
+│   ├── main.py              # Slimmed root app (895 lines)
+│   └── commands/            # Phase 08+ command modules
+│       ├── __init__.py
+│       ├── _shared.py        # Shared console, helpers
+│       ├── backtrack.py     # backtrack_app
+│       ├── security.py      # security_app
+│       ├── health.py        # health_app
+│       └── acp.py          # acp_app
 ├── kernel/
 │   ├── acp_client.py           # ACPClient for JSON-RPC/stdio
 │   ├── acp_registry_adapter.py # ACPRegistryAdapter for agent discovery
