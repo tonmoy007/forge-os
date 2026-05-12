@@ -102,22 +102,24 @@ None currently.
 ### B: CocoIndex Evaluation & POC (Independent)
 | ID | Task | Status |
 |---|---|---|
-| P08.5.06 | Evaluate CocoIndex for incremental indexing | 🔄 |
-| P08.5.07 | CocoIndex pipeline integration with Context Pruner | 🔄 |
-| P08.5.08 | Tree-sitter based code chunking via `RecursiveSplitter` | 🔄 |
+| P08.5.06 | Evaluate CocoIndex for incremental indexing | ✅ **Deferred** — requires PostgreSQL, overkill for current scale. Use `st_mtime` cache instead |
+| P08.5.07 | CocoIndex pipeline integration with Context Pruner | 🔄 Phase 09+ when global memory mining is needed |
+| P08.5.08 | Tree-sitter based code chunking via `RecursiveSplitter` | 🔄 Phase 09+ |
 
 ### C: Event Store Groundwork (Independent)
 | ID | Task | Status |
 |---|---|---|
-| P08.5.09 | Event Store aggregate schema definition | 🔄 |
-| P08.5.10 | Dual-write Event Store alongside `state.json` | 🔄 |
+| P08.5.09 | SQLite Event Store with snapshots | ✅ `events/store.py` — append, read, replay, snapshots |
+| P08.5.10 | Dual-write alongside `state.json` | ✅ `StateManager.save()` appends to both; non-blocking on ES failure |
+| P08.5.11 | Phase 08 event types registered | ✅ 12 new types added to `events/model.py` |
+| P08.5.12 | Dual-write consistency verified | ✅ replay_state matches state.json |
 
 ### Phase 08.5 Validation
-| Item | Target |
+| Item | Status |
 |---|---|
-| Tests pass | TBD |
-| Ruff lint | clean |
-| Compileall | clean |
+| Tests pass | ✅ 182 total (133 + 20 async + 29 Event Store) |
+| Ruff lint | ✅ clean |
+| Compileall | ✅ clean |
 
 ## Notes For The Next Implementer
 
@@ -174,7 +176,7 @@ src/forge_os/
 │   ├── pruner.py            # ⏳ CocoIndex pipeline integration
 │   └── pipeline.py          # 🆕 CocoIndex incremental indexing pipeline
 ├── events/
-│   └── store.py             # 🆕 Event Store for dual-write persistence
+│   ├── store.py             # ✅ Event Store for dual-write persistence (Phase 08.5)
 └── kernel/                  # Phase 08 complete
     ├── acp_client.py
     └── acp_registry_adapter.py
@@ -182,8 +184,8 @@ src/forge_os/
 
 Last validation commands:
 
-- `.venv/bin/python -m pytest` — 133 passed (67 baseline + 66 Phase 08 new).
+- `.venv/bin/python -m pytest` — 182 passed (67 baseline + 66 Phase 08 + 20 async + 29 Event Store).
 - `.venv/bin/python -m ruff check src tests` — clean for new/modified files.
 - `.venv/bin/python -m compileall src tests` — passed.
 
-Phase 08 validated ✅. All core deliverables complete.
+Phase 08.5 Workstreams A (async) and C (Event Store) delivered. Workstream B (CocoIndex) evaluated and deferred.
