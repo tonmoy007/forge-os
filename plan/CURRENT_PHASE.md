@@ -1,22 +1,22 @@
 # Current Forge OS Phase
 
 > **Session Continuity:** If this session is interrupted, run `git log --oneline -5 && git diff HEAD && cat plan/RESUME.md 2>/dev/null || echo "No RESUME.md"` before continuing.
-> Last validated: 133 tests passed, ruff clean (new/modified files), compileall clean.
+> Last validated: 186 tests passed, ruff clean, compileall clean.
 
 ## Current Phase
 
-- Phase: 08.5
-- File: `plan/PHASE-08.5-async-cocoindex.md`
+- Phase: 09
+- File: `plan/PHASE-09-health-global-skills.md`
 - Status: in-progress
 
 ## Current Objective
 
-Prepare Forge OS for the v4 architecture by migrating the `KernelAdapter` protocol from synchronous to asynchronous execution, evaluating and adopting CocoIndex as the incremental indexing engine for the Context Pruner, and laying groundwork for event-sourced state.
+Prepare Forge OS for v1 stability by adding health checks, global cross-project memory, profile adaptation, approved skill mining, and ACP agent health monitoring using session management from Phase 08.
 
 ## Last Completed Phase
 
-- Phase: 08
-- File: `plan/PHASE-08-backtrack-security.md`
+- Phase: 08.5
+- File: `plan/PHASE-08.5-async-cocoindex.md`
 - Status: complete
 
 ## Discipline & Clean Code Enforcement (Phase 08+)
@@ -85,41 +85,45 @@ Expected test count after Phase 08: 120+ passed.
 
 None currently.
 
-## Phase 08.5 Task Summary
+## Phase 09 Task Summary
 
-### A: Async Adapter Migration (Independent)
+### Health Checks
 | ID | Task | Status |
 |---|---|---|
-| P08.5.01 | Define async `KernelAdapter` protocol | ✅ |
-| P08.5.02 | Implement async `DummyAdapter` | ✅ |
-| P08.5.03 | Add async `BaseKernelAdapter` | ✅ |
-| P08.5.04 | Implement async agent executor | ✅ `run_stage_agent_async` in `agents/executor.py` |
-| P08.5.05 | Add `aiohttp`/`httpx` as core async HTTP deps | ✅ |
-| P08.5.06 | Add async HTTP utility module | ✅ `kernel/http.py` with retry+timeout |
-| P08.5.07 | Add sync-to-async compatibility tests | ✅ 20 tests, all pass |
-| P08.5.08 | Remove Phase 08 sync wrappers | 🔄 future cleanup |
+| P09.01 | Implement `forge health check` | 🔄 |
+| P09.02 | Add hook unit test harness | 🔄 |
+| P09.03 | Add gate simulation fixtures | 🔄 |
+| P09.04 | Knowledge integrity scanner | 🔄 |
+| P09.05 | Token budget report | 🔄 |
 
-### B: CocoIndex Evaluation & POC (Independent)
+### Global Memory
 | ID | Task | Status |
 |---|---|---|
-| P08.5.06 | Evaluate CocoIndex for incremental indexing | ✅ **Deferred** — requires PostgreSQL, overkill for current scale. Use `st_mtime` cache instead |
-| P08.5.07 | CocoIndex pipeline integration with Context Pruner | 🔄 Phase 09+ when global memory mining is needed |
-| P08.5.08 | Tree-sitter based code chunking via `RecursiveSplitter` | 🔄 Phase 09+ |
+| P09.06 | Global memory directory under `~/.forge/` | 🔄 |
+| P09.07 | Global lesson promotion with approval | 🔄 |
+| P09.08 | Project profiles memory | 🔄 |
+| P09.09 | Pattern tracker | 🔄 |
 
-### C: Event Store Groundwork (Independent)
+### Skill Mining
 | ID | Task | Status |
 |---|---|---|
-| P08.5.09 | SQLite Event Store with snapshots | ✅ `events/store.py` — append, read, replay, snapshots |
-| P08.5.10 | Dual-write alongside `state.json` | ✅ `StateManager.save()` appends to both; non-blocking on ES failure |
-| P08.5.11 | Phase 08 event types registered | ✅ 12 new types added to `events/model.py` |
-| P08.5.12 | Dual-write consistency verified | ✅ replay_state matches state.json |
+| P09.10 | Skill proposal command | 🔄 |
+| P09.11 | Skill approval workflow | 🔄 |
+| P09.12 | Skill install/use commands | 🔄 |
 
-### Phase 08.5 Validation
-| Item | Status |
+### ACP Agent Health
+| ID | Task | Status |
+|---|---|---|
+| P09.13 | ACP agent health checks using session/list | 🔄 |
+| P09.14 | Agent restart/recovery logic | 🔄 |
+| P09.15 | Session health monitoring | 🔄 |
+
+### Phase 09 Validation
+| Item | Target |
 |---|---|
-| Tests pass | ✅ 182 total (133 + 20 async + 29 Event Store) |
-| Ruff lint | ✅ clean |
-| Compileall | ✅ clean |
+| Tests pass | TBD (186 baseline) |
+| Ruff lint | clean |
+| Compileall | clean |
 
 ## Notes For The Next Implementer
 
@@ -140,52 +144,57 @@ Read:
 13. Existing source under `src/forge_os/`
 14. Existing tests under `tests/`
 
-### Phase 08.5 Overview (Three Independent Workstreams)
+### Phase 08.5 Completed Deliverables
 
-| Workstream | Description | Key Files |
+| Workstream | Deliverable | Status |
 |---|---|---|
-| **A: Async Migration** | Migrate KernelAdapter protocol to async, update DummyAdapter and executor | `adapters/base.py`, `adapters/dummy.py`, `agents/executor.py` |
-| **B: CocoIndex** | Evaluate CocoIndex, integrate with Context Pruner for incremental indexing | `context/pruner.py`, `context/pipeline.py` (new) |
-| **C: Event Store** | Design Event Store aggregate schema, dual-write alongside state.json | `events/store.py` (new), `events/model.py` |
+| **A: Async Migration** | AsyncKernelAdapter protocol, AsyncDummyAdapter, async executor, HTTP client | ✅ |
+| **B: Incremental Cache** | Lightweight mtime+content cache replacing CocoIndex (zero deps) | ✅ |
+| **C: Event Store** | SQLite append-only log, dual-write, replay, snapshots, Phase 08 events | ✅ |
 
-These workstreams share **no code dependencies** and may be implemented in any order or by parallel agents.
+### Deferred Items
 
-### Deferred from Phase 08
-
-- LiteLLMAdapter ACP integration + adapter fallback chain (P08.32-P08.35) — part of async migration workstream
-- ADG cascade further enhancement — P08.04 basic implementation exists
+- LiteLLMAdapter ACP integration + fallback chain — deferred to async migration cleanup
 - Full event-sourced state migration — deferred to later phases
+- Task ID numbering divergence: CURRENT_PHASE.md renumbered P08.5.x for brevity
 
-### Clean Code Rules (Continuing from Phase 08)
+### Clean Code Rules (Continuing)
 
-All new Phase 08+ commands MUST live in their own file under `src/forge_os/cli/commands/<domain>.py`.
+All new Phase 09+ commands MUST live in their own file under `src/forge_os/cli/commands/<domain>.py`.
 Each file exposes a Typer sub-app. Register with `app.add_typer()` in `main.py`.
 Business logic belongs in `use_cases/`, not in CLI command files.
 
-### Directory Structure (Phase 08.5)
+### Directory Structure (Phase 09)
 
 ```
 src/forge_os/
 ├── adapters/
-│   ├── base.py              # ⏳ Migrate to async KernelAdapter protocol
-│   ├── dummy.py             # ⏳ Migrate to async DummyAdapter
-│   └── ...
+│   ├── async_base.py        # AsyncKernelAdapter protocol (Phase 08.5)
+│   ├── async_dummy.py       # AsyncDummyAdapter (Phase 08.5)
+│   ├── base.py              # Sync KernelAdapter protocol (preserved)
+│   └── dummy.py             # Sync DummyAdapter (preserved)
 ├── agents/
-│   └── executor.py          # ⏳ Migrate to async executor
+│   └── executor.py          # run_stage_agent_async added (Phase 08.5)
 ├── context/
-│   ├── pruner.py            # ⏳ CocoIndex pipeline integration
-│   └── pipeline.py          # 🆕 CocoIndex incremental indexing pipeline
+│   ├── pruner.py            # mtime cache added (Phase 08.5)
 ├── events/
-│   ├── store.py             # ✅ Event Store for dual-write persistence (Phase 08.5)
-└── kernel/                  # Phase 08 complete
-    ├── acp_client.py
-    └── acp_registry_adapter.py
+│   ├── store.py             # Event Store for dual-write (Phase 08.5)
+│   └── model.py             # Phase 08 event types registered
+├── kernel/
+│   ├── acp_client.py        # Phase 08
+│   ├── acp_registry_adapter.py  # Phase 08
+│   └── http.py              # Async HTTP client (Phase 08.5)
+└── cli/commands/
+    ├── backtrack.py          # Phase 08
+    ├── security.py           # Phase 08
+    ├── health.py             # Phase 09 scaffold
+    └── acp.py               # Phase 08
 ```
 
 Last validation commands:
 
-- `.venv/bin/python -m pytest` — 182 passed (67 baseline + 66 Phase 08 + 20 async + 29 Event Store).
-- `.venv/bin/python -m ruff check src tests` — clean for new/modified files.
+- `.venv/bin/python -m pytest` — 186 passed (67 baseline + 66 Phase 08 + 20 async + 29 Event Store + 4 cache).
+- `.venv/bin/python -m ruff check src tests` — clean.
 - `.venv/bin/python -m compileall src tests` — passed.
 
-Phase 08.5 Workstreams A (async) and C (Event Store) delivered. Workstream B (CocoIndex) evaluated and deferred.
+Phase 08.5 complete ✅. All three workstreams delivered. Moving to Phase 09.

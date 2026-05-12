@@ -74,7 +74,8 @@ The project is built phase by phase in strict order. Do not implement future-pha
 | 06 | `plan/PHASE-06-memory-lessons.md` | Lessons, reflections | ✅ |
 | 07 | `plan/PHASE-07-adg-context.md` | ADG, context pruning | ✅ |
 | **08** | **`plan/PHASE-08-backtrack-security.md`** | **Backtrack, security, ACP** | **✅ complete** |
-| 08.5 | `plan/PHASE-08.5-async-cocoindex.md` | Async migration, CocoIndex, Event Store | 🔄 in-progress |
+| 08.5 | `plan/PHASE-08.5-async-cocoindex.md` | Async migration, CocoIndex, Event Store | ✅ complete |
+| **09** | **`plan/PHASE-09-health-global-skills.md`** | **Health, global memory, skills** | **🔄 in-progress** |
 | 09 | `plan/PHASE-09-health-global-skills.md` | Health, global memory, skills | 🔲 not-started |
 | 10 | `plan/PHASE-10-daemon-dreamer-lazy-context.md` | Daemon, Dreamer | 🔲 not-started |
 | 11 | `plan/PHASE-11-channels-openclaw-extensions.md` | Channels, OpenClaw, plugins | 🔲 not-started |
