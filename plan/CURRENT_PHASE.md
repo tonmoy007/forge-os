@@ -1,22 +1,22 @@
 # Current Forge OS Phase
 
 > **Session Continuity:** If this session is interrupted, run `git log --oneline -5 && git diff HEAD && cat plan/RESUME.md 2>/dev/null || echo "No RESUME.md"` before continuing.
-> Last validated: 186 tests passed, ruff clean, compileall clean.
+> Last validated: 230 tests passed, ruff clean, compileall clean.
 
 ## Current Phase
 
-- Phase: 09
-- File: `plan/PHASE-09-health-global-skills.md`
+- Phase: 10
+- File: `plan/PHASE-10-daemon-dreamer-lazy-context.md`
 - Status: in-progress
 
 ## Current Objective
 
-Prepare Forge OS for v1 stability by adding health checks, global cross-project memory, profile adaptation, approved skill mining, and ACP agent health monitoring using session management from Phase 08.
+Add optional always-on behavior: background daemon, Observer scheduling, Dreamer daily/weekly maintenance, lesson decay, lazy context loading, and continuous ACP agent health monitoring via the session management foundation from Phase 08.
 
 ## Last Completed Phase
 
-- Phase: 08.5
-- File: `plan/PHASE-08.5-async-cocoindex.md`
+- Phase: 09
+- File: `plan/PHASE-09-health-global-skills.md`
 - Status: complete
 
 ## Discipline & Clean Code Enforcement (Phase 08+)
