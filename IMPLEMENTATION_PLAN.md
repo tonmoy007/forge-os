@@ -15,7 +15,7 @@ Start here:
 ## Phase Files
 
 | Phase | File | Result |
-|---|---|---|
+|---|---|---|---|
 | 00 | `plan/PHASE-00-foundation.md` | Architecture, schemas, ADRs, test strategy |
 | 01 | `plan/PHASE-01-cli-scaffold.md` | CLI scaffold, init, status, config |
 | 02 | `plan/PHASE-02-state-machine.md` | Deterministic pipeline transitions |
@@ -24,7 +24,8 @@ Start here:
 | 05 | `plan/PHASE-05-adapters-agents.md` | Kernel adapters, personas, output contracts |
 | 06 | `plan/PHASE-06-memory-lessons.md` | Project memory, reflections, lessons |
 | 07 | `plan/PHASE-07-adg-context.md` | ADG, staleness, context pruning |
-| 08 | `plan/PHASE-08-backtrack-security.md` | Backtrack, rework, security baseline |
+| 08 | `plan/PHASE-08-backtrack-security.md` | Backtrack, rework, security baseline, ACP integration |
+| 08.5 | `plan/PHASE-08.5-async-cocoindex.md` | Async adapter migration, CocoIndex evaluation, Event Store groundwork |
 | 09 | `plan/PHASE-09-health-global-skills.md` | Health, global memory, skill mining |
 | 10 | `plan/PHASE-10-daemon-dreamer-lazy-context.md` | Daemon, Dreamer, lazy context |
 | 11 | `plan/PHASE-11-channels-openclaw-extensions.md` | Channels, OpenClaw, extensions |

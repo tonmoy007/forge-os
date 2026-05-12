@@ -92,6 +92,7 @@ CLI-scaffolded awaiting backend implementation.
 
 ### Upcoming
 
+- **Phase 08.5** — Async adapter migration, CocoIndex evaluation, Event Store groundwork
 - **Phase 09** — Health checks, global memory, skill mining, ACP agent health
 - **Phase 10** — Daemon, dreamer, lazy context builder
 - **Phase 11** — Channel adapters, OpenClaw, extension/plugin system
@@ -178,6 +179,7 @@ See `ROADMAP.md` for detailed release milestones.
 | 0.3 | Phase 05 complete | Provider-agnostic agent execution |
 | 0.4 | Phases 06–07 | Memory, ADG, context pruning |
 | **0.5** | **Phase 08** | **Backtrack, security, ACP — current** |
+| 0.6 | Phase 08.5 | Async migration, CocoIndex, Event Store |
 | 1.0 | Phase 09 | Health checks, global memory, skills |
 | 1.5 | Phase 10 | Daemon, dreamer, lazy context |
 | 2.0 | Phase 11 | Channels, OpenClaw, extensions |

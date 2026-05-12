@@ -1,5 +1,8 @@
 # Current Forge OS Phase
 
+> **Session Continuity:** If this session is interrupted, run `git log --oneline -5 && git diff HEAD && cat plan/RESUME.md 2>/dev/null || echo "No RESUME.md"` before continuing.
+> Last validated: 67 tests passed, ruff clean, compileall clean.
+
 ## Current Phase
 
 - Phase: 08
@@ -34,6 +37,33 @@ Phase 08 has been expanded to include ACP (Agent Client Protocol) integration ba
 3. Backtrack diff-mode rerun (P08.06) can leverage ACP session resume
 4. Phase 11 (`forge plug`, OpenClawAdapter) already has "Implement offline fallback to another adapter" — ACP makes that fallback meaningful
 5. Phase 09 (Health) will use ACP session health checks for agent restart logic
+
+## Discipline & Clean Code Enforcement (Phase 08+)
+
+Before implementing any task, run:
+```bash
+git log --oneline -5
+git diff HEAD
+git status
+cat plan/RESUME.md 2>/dev/null || echo "No resume needed"
+```
+
+All Phase 08+ implementations MUST follow:
+
+| Rule | How to Verify |
+|------|--------------|
+| **CLI never imports domain directly** | `grep -rn "from forge_os\.\(gates\|core\|context\|memory\|project\) import" src/forge_os/cli/` — **zero matches required** |
+| **No upward imports from domain** | `grep -rn "forge_os\.cli" src/forge_os/core/ src/forge_os/project/ src/forge_os/gates/ src/forge_os/memory/ src/forge_os/kernel/` — **zero matches required** |
+| **Schemas are pure data** | `grep -rn "from forge_os" src/forge_os/schemas/ --include="*.py"` — **only stdlib/pydantic imports allowed** |
+| **Every use case has tests** | `ls tests/test_use_cases_*.py` — must exist for each `src/forge_os/use_cases/*.py` |
+
+Last validation commands:
+
+- `.venv/bin/python -m pytest` — 67 passed.
+- `.venv/bin/python -m ruff check src tests` — passed.
+- `.venv/bin/python -m compileall src tests` — passed.
+
+Expected test count after Phase 08: 120+ passed.
 
 ## Resolved Decisions
 

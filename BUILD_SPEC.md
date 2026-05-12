@@ -31,6 +31,8 @@ Recommended libraries:
 - Output: `rich`
 - Schemas: `pydantic`
 - YAML: `pyyaml` or `ruamel.yaml`
+- Async HTTP: `aiohttp` (Phase 08+)
+- Incremental indexing: `cocoindex` (Phase 08.5+, optional)
 - Graphs: `networkx`
 - Tests: `pytest`
 - Scheduling later: `APScheduler`
@@ -80,9 +82,10 @@ Forge OS should be built from the inside out:
 7. Memory/reflection/lessons
 8. ADG/context pruning
 9. Backtrack/security
-10. Health/global memory/skills
-11. Daemon/Dreamer/lazy context
-12. Channels/OpenClaw/extensions
+10. **Async migration, CocoIndex incremental indexing, Event Store groundwork (Phase 08.5)**
+11. Health/global memory/skills
+12. Daemon/Dreamer/lazy context
+13. Channels/OpenClaw/extensions
 
 ## Canonical Project Layout
 

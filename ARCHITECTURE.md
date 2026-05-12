@@ -23,6 +23,8 @@ Forge OS core owns truth. AI providers, humans, OpenClaw, channels, and plugins 
 - Preferred development package manager: `uv`, while preserving standard `pip` compatibility.
 - Public installation target after packaging stabilizes: `pipx`.
 - Standalone binaries: deferred.
+- Async HTTP: `aiohttp` for ACP registry fetches and CocoIndex connectivity (Phase 08.5).
+- Incremental indexing: `cocoindex` (optional) for production Context Pruner (Phase 08.5).
 
 Detailed package layout decisions are tracked in `PACKAGE_LAYOUT.md`.
 
@@ -71,11 +73,12 @@ The implementation package should use import package `forge_os`.
 | `forge_os.events` | Lifecycle events and event bus | Phase 03 |
 | `forge_os.hooks` | Hook registration, policy, execution | Phase 03 |
 | `forge_os.gates` | Gate criteria, runners, reports | Phase 04 |
-| `forge_os.adapters` | Kernel adapter interface and implementations | Phase 05 |
+| `forge_os.adapters` | Kernel adapter interface and implementations (sync + async from Phase 08.5) | Phase 05 |
 | `forge_os.agents` | Agent personas and output contracts | Phase 05 |
 | `forge_os.memory` | Reflections, lessons, project/global memory | Phase 06 |
 | `forge_os.graphs` | ADG/LKG graph storage and operations | Phase 07 |
-| `forge_os.context` | Dependency-aware context building/pruning | Phase 07 |
+| `forge_os.context` | Dependency-aware context building/pruning (CocoIndex-backed from Phase 08.5) | Phase 07 |
+| `forge_os.kernel` | ACPClient, ACPRegistryAdapter, async HTTP utilities | Phase 08 |
 | `forge_os.backtrack` | Rework/backtrack ticket flows | Phase 08 |
 | `forge_os.security` | Tool profiles, approvals, audit logging | Phase 08 |
 | `forge_os.health` | Self-tests, diagnostics, health reports | Phase 09 |
@@ -139,7 +142,9 @@ The lifecycle is built in phases:
 
 Forge OS core must communicate with agent runtimes through the language-agnostic `KernelAdapter` interface only.
 
-Required capabilities:
+### Synchronous Interface (Phase 05-08)
+
+Current required capabilities:
 
 - `spawn_agent(persona, context, tools)`.
 - `on_event(event, session)`.
@@ -154,6 +159,26 @@ Optional capabilities must be discoverable:
 
 Concrete adapters must normalize provider-specific details before returning results to core.
 
+### Asynchronous Interface (Phase 08.5+)
+
+Beginning in Phase 08.5, the adapter layer adds async support:
+
+- All `KernelAdapter` methods gain `async def` variants.
+- `ACPClient` and `ACPRegistryAdapter` are natively async.
+- `DummyAdapter` is ported to async (coexists with sync version).
+- `BaseKernelAdapter` provides default async implementations.
+
+The async migration enables ACP streaming, multi-model routing, and live CocoIndex indexing.
+
+### ACP Integration (Phase 08+)
+
+ACP-compatible agents (Gemini CLI, Copilot CLI, Codex) are accessible through:
+
+- `ACPClient` — JSON-RPC over stdio with initialize, prompt, session management.
+- `ACPRegistryAdapter` — Discover agents from the official ACP Registry CDN.
+- `spawn_acp_agent()` on `KernelAdapter` — Spawn and manage ACP agents.
+- Session management: list, resume, close (all stabilized April 2026).
+
 Adapter implementation order:
 
 1. `DummyAdapter`.
@@ -163,6 +188,7 @@ Adapter implementation order:
 5. `OpenCodeAdapter`.
 6. `LocalLLMAdapter`.
 7. `HumanAdapter`.
+8. `ACPClient`-wrapped agents (discoverable at runtime via `forge acp discover`).
 
 The canonical interface is defined in `plan/KERNEL_ADAPTER_INTERFACE.md`.
 
@@ -189,6 +215,16 @@ Event rules:
 - Blocking hooks must fail safe.
 - Hooks require timeout policy.
 - Events should include enough metadata for auditability without leaking secrets.
+
+### Event Sourcing Evolution (Phase 08.5+)
+
+The current `state.json`-based persistence is gradually evolving toward an event-sourced architecture:
+
+1. **Phase 08-08.5 (dual-write):** Every state write also appends an event to the Event Store. State.json remains authoritative.
+2. **Phase 09-10 (authority handover):** Event Store becomes authoritative; state.json becomes a cached projection.
+3. **Phase 11+ (event-only):** Direct state.json writes are removed. All state is derived by replaying events.
+
+This gradual approach prevents data loss risk while building toward the SRSv4.1 requirement of an immutable, append-only Event Store (FR-ES-001-006).
 
 ## Memory and Learning Boundary
 
@@ -224,6 +260,61 @@ Non-negotiable security rules:
 - Tool capabilities must be least-privilege.
 - External execution must have timeouts.
 - Plugins and adapters cannot bypass core state ownership.
+
+## Clean Code & Layer Separation
+
+Architecture layer boundaries are enforced throughout every phase:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     CLI LAYER (cli/)                         │
+│  Typer commands, Rich formatting, arg parsing only           │
+│  NO business logic, NO domain imports                        │
+│  delegates to → UseCases                                     │
+├─────────────────────────────────────────────────────────────┤
+│                    USE CASES LAYER (use_cases/)              │
+│  Sole orchestrator between CLI and domain                    │
+│  Catches domain exceptions, returns domain objects           │
+│  Testable without CLI or network                             │
+│  imports from → core/, gates/, project/, context/, kernel/   │
+├─────────────────────────────────────────────────────────────┤
+│                   DOMAIN / INFRASTRUCTURE                    │
+│  core/     - StateManager, atomic writes, transitions        │
+│  gates/    - Gate coordinator, evaluators                    │
+│  context/  - Artifact registry, ADG, pruning                │
+│  project/  - Detection, scaffold, profiles, backtrack        │
+│  memory/   - Lessons, reflections                            │
+│  kernel/   - ACPClient, ACPRegistryAdapter                   │
+│  events/   - Event bus, event log                            │
+│  hooks/    - Hook registry                                   │
+│  agents/   - Personas, output contracts, executor            │
+│  adapters/ - KernelAdapter implementations                   │
+├─────────────────────────────────────────────────────────────┤
+│                     SCHEMAS LAYER (schemas/)                 │
+│  Pure Pydantic models, zero Forge OS imports                 │
+│  Shared by all layers above                                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Layer Rules (Enforced)
+
+1. **CLI never imports domain directly.** `cli/main.py` and `cli/commands/*.py` may only import from `use_cases/`, `config/`, `schemas/`, and `project/detect.py`. Direct imports from `gates/`, `core/` (except `StateError`), `context/`, or `memory/` are violations.
+
+2. **Use cases are the sole bridge.** Every new CLI command must have a corresponding `UseCases` method. Use cases import from domain modules freely but never from CLI.
+
+3. **No upward imports.** Domain modules (`core/`, `gates/`, `context/`, `project/`, `memory/`, `kernel/`, `events/`, `hooks/`, `agents/`, `adapters/`) must never import from `cli/` or `use_cases/`.
+
+4. **Schemas are pure data.** `schemas/*.py` files contain only Pydantic models. No business logic, no infrastructure imports.
+
+### Violation Detection Script
+
+```bash
+# Upward import check (domain → CLI is forbidden)
+grep -rn "forge_os\.cli" src/forge_os/core/ src/forge_os/project/ src/forge_os/gates/ src/forge_os/memory/ src/forge_os/context/ src/forge_os/kernel/ src/forge_os/events/ src/forge_os/hooks/
+
+# Business logic in CLI
+grep -rn "from forge_os\.\(gates\|core\|context\|memory\|project\) import" src/forge_os/cli/
+```
 
 ## Phase 01 Implementation Guidance
 

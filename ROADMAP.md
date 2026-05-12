@@ -69,18 +69,35 @@ Outcome:
 
 - Backtrack ticket schema, YAML store, and CLI (list/plan/approve/run) ✅
 - Rework planner with approval flow ✅
-- ADG cascade generation — pending
-- Stale flag cleanup after revalidation — pending
+- ADG cascade generation (P08.04) — pending
+- Stale flag cleanup after revalidation (P08.07) — pending
 - Security profiles (YAML-defined, path/command restrictions) ✅
 - Security enforcer with timeouts and audit logging ✅
 - Security audit log (`.forge/security-audit.jsonl`) ✅
 - ACP CLI commands scaffolded (discover/list/install/sessions/close-session) ⚠️
-- ACPClient (JSON-RPC over stdio) — pending
-- ACPRegistryAdapter (registry fetch + agent install) — pending
-- IKernelAdapter ACP enhancements (spawn, list, session mgmt) — pending
-- ExternalCommand gate — pending
-- MetricThreshold gate — pending
-- Phase 08-specific tests — not yet written
+- ACPClient + ACPRegistryAdapter backend — pending
+- ACPUseCases backend — pending (currently missing, CLI errors out)
+- IKernelAdapter ACP enhancements — pending
+- ExternalCommand gate evaluator — pending
+- MetricThreshold gate evaluator — pending
+- Phase 08 tests (target 120+, at 67 baseline) — pending
+
+## Release 0.6 — Async & Incremental Indexing
+
+Target phases:
+
+- Phase 08.5 (Async Migration, CocoIndex Evaluation, Event Store Groundwork)
+
+Outcome:
+
+- Async KernelAdapter protocol (coexists with sync).
+- Async DummyAdapter and agent executor.
+- `aiohttp` dependency for async HTTP.
+- CocoIndex POC — incremental re-indexing for Context Pruner.
+- CocoIndex evaluation report (adopt / defer / replace).
+- Tree-sitter based code chunking evaluation.
+- Event Store schema with dual-write alongside `state.json`.
+- Phase 08 sync wrapper cleanup.
 
 ## Release 1.0 — Stable Local Forge OS
 
@@ -93,6 +110,8 @@ Outcome:
 - Health checks.
 - Global memory.
 - Skill mining.
+- CocoIndex-backed context indexing pipeline.
+- ACP agent health monitoring.
 - Local-first Forge OS ready for real projects.
 
 ## Release 1.5 — Always-On Forge OS

@@ -123,4 +123,5 @@ def test_explain_known_topic() -> None:
     result = runner.invoke(app, ["explain", "security"])
 
     assert result.exit_code == 0
-    assert "enforce least-privilege tool and command access" in result.output
+    assert "Phase 01 uses secure defaults" in result.output
+    assert "security profiles" in result.output

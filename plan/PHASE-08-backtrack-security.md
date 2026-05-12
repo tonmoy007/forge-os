@@ -2,7 +2,7 @@
 
 ## Status
 
-not-started
+in-progress
 
 ## Objective
 
@@ -57,67 +57,84 @@ Excluded:
 
 ### Backtrack & Rework
 
-| ID | Task | Notes |
-|---|---|---|
-| P08.01 | Define backtrack ticket schema | `BacktrackTicket` and `BacktrackStore` models with statuses: `open`, `approved`, `in_progress`, `resolved`, `rejected` |
-| P08.02 | Add `forge backtrack list` | List all backtrack tickets with status filtering |
-| P08.03 | Add `forge backtrack plan <id>` | Generate affected stages from ADG, show rework cascade |
-| P08.04 | Generate affected stages from ADG | Use existing artifact dependency graph to determine what needs rework |
-| P08.05 | Add `forge backtrack approve <id>` | Approve a ticket for execution |
-| P08.06 | Add `forge backtrack run <id>` in diff mode | Rerun affected stages with diff-mode flag on target stage |
-| P08.07 | Clear stale flags after revalidation | Remove stale downstream flags after rework completes |
+| ID | Task | Notes | Status |
+|---|---|---|---|---|
+| P08.01 | Define backtrack ticket schema | `BacktrackTicket` and `BacktrackStore` models with statuses | ✅ |
+| P08.02 | Add `forge backtrack list` | List all backtrack tickets with status filtering | ✅ |
+| P08.03 | Add `forge backtrack plan <id>` | Generate affected stages from ADG, show rework cascade | ✅ |
+| P08.04 | Generate affected stages from ADG | Use existing artifact dependency graph to determine what needs rework | 🔄 |
+| P08.05 | Add `forge backtrack approve <id>` | Approve a ticket for execution | ✅ |
+| P08.06 | Add `forge backtrack run <id>` in diff mode | Rerun affected stages with diff-mode flag | ✅ |
+| P08.07 | Clear stale flags after revalidation | Remove stale downstream flags after rework completes | 🔄 |
 
 ### Security Profiles & Enforcement
 
-| ID | Task | Notes |
-|---|---|---|
-| P08.08 | Define tool/security profile schema | YAML-defined profiles for least-privilege access patterns |
-| P08.09 | Enforce path restrictions for tools | Validate tool access against allowed paths |
-| P08.10 | Prevent agents from directly writing state files | `SecurityEnforcer` blocks direct `.forge/state.json` writes |
-| P08.11 | Add command allowlist and timeout runner | `SecurityEnforcer` runs commands with explicit timeouts |
-| P08.14 | Write `.forge/security-audit.jsonl` | Append-only audit log for all security-relevant actions |
+| ID | Task | Notes | Status |
+|---|---|---|---|
+| P08.08 | Define tool/security profile schema | YAML-defined profiles for least-privilege access patterns | ✅ |
+| P08.09 | Enforce path restrictions for tools | Validate tool access against allowed paths | ✅ |
+| P08.10 | Prevent agents from directly writing state files | `SecurityEnforcer` blocks direct `.forge/state.json` writes | ✅ |
+| P08.11 | Add command allowlist and timeout runner | `SecurityEnforcer` runs commands with explicit timeouts | ✅ |
+| P08.14 | Write `.forge/security-audit.jsonl` | Append-only audit log for all security-relevant actions | ✅ |
 
 ### Gates
 
-| ID | Task | Notes |
-|---|---|---|
-| P08.12 | Implement `ExternalCommand` gate | Execute external commands as gates with timeout support |
-| P08.13 | Implement `MetricThreshold` gate | Parse command output, compare against thresholds, pass/fail |
-| P08.15 | Add tests for rework/security/gates | Integration and unit tests for all new components |
+| ID | Task | Notes | Status |
+|---|---|---|---|
+| P08.12 | Implement `ExternalCommand` gate evaluator | Execute external commands as gates with timeout support | 🔄 |
+| P08.13 | Implement `MetricThreshold` gate evaluator | Parse command output, compare against thresholds | 🔄 |
+| P08.15 | Add tests for rework/security/gates | Integration and unit tests for all new components | 🔄 |
 
 ### ACP Registry & Agent Discovery
 
-| ID | Task | Notes |
-|---|---|---|
-| P08.16 | Define `ACPRegistryAdapter` interface | Abstract interface for fetching registry JSON and agent manifests |
-| P08.17 | Implement `ACPRegistryAdapter` | Fetch `https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json`, parse agent manifests |
-| P08.18 | Implement `ACPClient` | JSON-RPC over stdio, initialize, prompt, session management |
-| P08.19 | Add session management methods | `session_list`, `session_resume`, `session_close` (all stabilized April 2026) |
-| P08.20 | Add `session_config_options` | Query available models, modes, reasoning levels |
-| P08.21 | Add session info update handling | Handle `session_update` notifications for streaming responses |
-| P08.22 | Implement agent installation | Support binary, npx, and uvx distribution methods per manifest |
-| P08.23 | Add `forge agent discover` | Fetch and display available ACP agents from registry |
-| P08.24 | Add `forge agent install <agent-id>` | Install agent via specified distribution method |
-| P08.25 | Add `forge agent list` | Show installed/local ACP agents |
-| P08.26 | Add `forge agent spawn <agent-id>` | Spawn an ACP agent subprocess and initialize session |
+| ID | Task | Notes | Status |
+|---|---|---|---|
+| P08.16 | Define `ACPRegistryAdapter` interface | Abstract interface for fetching registry JSON | ✅ spec complete |
+| P08.17 | Implement `ACPRegistryAdapter` | Fetch registry, parse manifests, binary/npx/uvx install | 🔄 |
+| P08.18 | Implement `ACPClient` | JSON-RPC over stdio, initialize, prompt, streaming | 🔄 |
+| P08.19 | Add session management methods | `session_list`, `session_resume`, `session_close` | 🔄 |
+| P08.20 | Add `session_config_options` | Query available models, modes, reasoning levels | 🔄 |
+| P08.21 | Add session info update handling | Handle `session_update` notifications | 🔄 |
+| P08.22 | Implement agent installation | Binary, npx, and uvx distribution methods | 🔄 |
+| P08.23 | Add `forge acp discover` (CLI scaffolded) | Fetch and display available agents from registry | ⚠️ |
+| P08.24 | Add `forge acp install <id>` (CLI scaffolded) | Install agent via specified distribution | ⚠️ |
+| P08.25 | Add `forge acp list` (CLI scaffolded) | Show installed/local ACP agents | ⚠️ |
+| P08.26 | Add `forge acp sessions` (CLI scaffolded) | List active ACP sessions | ⚠️ |
+| P08.27 | Add `forge acp close-session <id>` (CLI scaffolded) | Close an ACP session | ⚠️ |
+
+### ACP Backend Implementation
+
+| ID | Task | Notes | Status |
+|---|---|---|---|
+| P08.28 | Create `kernel/` module with `acp_client.py` | Full ACPClient with JSON-RPC stdio transport | 🔄 |
+| P08.29 | Create `kernel/acp_registry_adapter.py` | Registry fetch, manifest parsing, installer | 🔄 |
+| P08.30 | Create `use_cases/acp.py` with `ACPUseCases` | Business logic bridging CLI to ACP backend (currently missing) | 🔄 |
+| P08.31 | Add `aiohttp` to project dependencies | Required by ACPRegistryAdapter for HTTP fetches | 🔄 |
 
 ### IKernelAdapter ACP Enhancements
 
-| ID | Task | Notes |
-|---|---|---|
-| P08.27 | Add `spawn_acp_agent` to `IKernelAdapter` | Abstract method for spawning ACP agents |
-| P08.28 | Add `list_acp_agents` to `IKernelAdapter` | List available agents from registry |
-| P08.29 | Add `get_acp_registry_adapter` to `IKernelAdapter` | Return registry adapter for agent discovery |
-| P08.30 | Add `is_acp_available` to `IKernelAdapter` | Check registry accessibility |
-| P08.31 | Enhance `LiteLLMAdapter` with ACP support | Wire ACP client into existing adapter, implement fallback chain |
+| ID | Task | Notes | Status |
+|---|---|---|---|
+| P08.32 | Add `spawn_acp_agent` to `KernelAdapter` | Abstract method for spawning ACP agents | 🔄 |
+| P08.33 | Add `list_acp_agents` to `KernelAdapter` | List available agents from registry | 🔄 |
+| P08.34 | Add `get_acp_registry_adapter` to `KernelAdapter` | Return registry adapter for agent discovery | 🔄 |
+| P08.35 | Add `is_acp_available` to `KernelAdapter` | Check registry accessibility | 🔄 |
+| P08.36 | Enhance `LiteLLMAdapter` with ACP support | Wire ACP client into adapter, implement fallback chain | 🔄 |
 
 ### ACP Adapter Fallback Chain
 
-| ID | Task | Notes |
-|---|---|---|
-| P08.32 | Implement adapter priority chain | `OpenClawAdapter → OpenCodeAdapter → LocalLLMAdapter → HumanAdapter` fallback |
-| P08.33 | Wire ACP agents into backtrack rerun | Use ACP session resume for `forge backtrack run <id>` |
-| P08.34 | ACP integration tests | Mock ACP registry, test agent discovery, installation, spawning |
+| ID | Task | Notes | Status |
+|---|---|---|---|
+| P08.37 | Implement adapter priority chain | `OpenClawAdapter → OpenCodeAdapter → LocalLLMAdapter → HumanAdapter` | 🔄 |
+| P08.38 | Wire ACP agents into backtrack rerun | Use ACP session resume for `forge backtrack run <id>` | 🔄 |
+| P08.39 | ACP integration tests | Mock ACP registry, test agent discovery, installation, spawning | 🔄 |
+
+### Phase 08 Completion
+
+| ID | Task | Notes | Status |
+|---|---|---|---|
+| P08.40 | Phase 08 tests (backtrack/security/gates/ACP) | Reach target of 120+ tests | 🔄 |
+| P08.41 | Update `PHASE-08-backtrack-security.md` status to complete | Orchestrator rule: every phase ends with tests, checks, updated status | 🔄 |
 
 ## ACP Registry Integration Details
 
@@ -329,7 +346,7 @@ class AgentManifest:
 - [ ] ACP integration is optional; LiteLLMAdapter falls back gracefully
 
 ### General
-- [ ] Tests pass (target: 80+ tests)
+- [ ] Tests pass (target: 120+ tests, from 67 baseline)
 - [ ] Ruff linting passes
 - [ ] Code compiles cleanly
 
@@ -341,14 +358,19 @@ class AgentManifest:
 - [ ] Security profiles enforced (`SecurityEnforcer` active)
 - [ ] ExternalCommand gates work with timeout
 - [ ] MetricThreshold gates work
-- [ ] ACP Registry adapter works
-- [ ] ACPClient JSON-RPC/stdio works
+- [ ] ACP Registry adapter works (ACPRegistryAdapter implemented)
+- [ ] ACPClient JSON-RPC/stdio works (ACPClient implemented)
 - [ ] Session management (list/resume/close) works
-- [ ] `forge agent discover/install/spawn` commands work
+- [ ] `forge acp discover/list/install/sessions/close-session` commands are functional
+- [ ] `use_cases/acp.py` exists with `ACPUseCases`
+- [ ] `kernel/acp_client.py` and `kernel/acp_registry_adapter.py` exist
 - [ ] IKernelAdapter ACP methods implemented
 - [ ] Adapter fallback chain wired
-- [ ] Tests pass
-- [ ] `CURRENT_PHASE.md` updated to Phase 09
+- [ ] `aiohttp` dependency added to pyproject.toml
+- [ ] Async migration preparation tasks deferred to Phase 08.5 (not blocking)
+- [ ] CocoIndex evaluation deferred to Phase 08.5 (not blocking)
+- [ ] Tests pass (120+)
+- [ ] `CURRENT_PHASE.md` updated to Phase 08.5
 
 ## Notes For The Implementer
 
@@ -379,10 +401,20 @@ Clean Code Architecture:
 
 `Implement Phase 08: backtrack tickets, rework cascade planning, security profiles, external/metric gates, audit logging, ACP registry adapter, ACPClient, session management, IKernelAdapter ACP enhancements, and forge agent discover/install/spawn commands.`
 
+## Next Phase: Phase 08.5 Preview
+
+Phase 08.5 (Async Migration & CocoIndex Evaluation) builds on Phase 08's ACP foundation:
+- Migrate the `KernelAdapter` protocol from sync to async to match v4 requirements
+- Add `aiohttp`/`httpx` async HTTP infrastructure
+- Evaluate and adopt CocoIndex as the incremental indexing engine for the Context Pruner
+- Tree-sitter based code chunking for Build/Eval stage agent context
+- Lay groundwork for event-sourced state (dual-write Event Store alongside state.json)
+
 ## Phase 09 Preview
 
-Phase 09 (Health, Global Skills) will build on the ACP foundation with:
+Phase 09 (Health, Global Skills) will build on the ACP and CocoIndex foundation with:
 - Health monitoring and adaptive fallback
 - Global skill registry accessible to all adapters
-- ACP agent health checks and restart logic
+- ACP agent health checks and session monitoring
 - Skill sharing between ACP and native adapters
+- CocoIndex-backed context indexing pipeline

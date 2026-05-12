@@ -16,6 +16,9 @@ Formal ADRs are stored in `adr/`.
 | `adr/ADR-006-optional-layers.md` | Daemon, channels, OpenClaw, plugins, and advanced automation are optional layers |
 | `adr/ADR-007-security-and-human-approval.md` | Use conservative least-privilege defaults and require human approval for high-risk actions |
 | `adr/ADR-008-openclaw-boundary.md` | OpenClaw integrates only through `OpenClawAdapter`; Forge OS remains source of truth |
+| `adr/ADR-009-async-adapter-layer.md` | Adapter layer MUST support async execution for ACP/streaming; sync adapters deprecated alongside async versions |
+| `adr/ADR-010-cocoindex-backbone.md` | CocoIndex adopted as incremental indexing engine for Context Pruner; `cocoindex` added as optional dependency |
+| `adr/ADR-011-event-sourcing-gradual.md` | Event Store introduced as dual-write alongside state.json; no rip-and-replace, gradual authority handover over 3 phases |
 
 ## Decision Summary
 
