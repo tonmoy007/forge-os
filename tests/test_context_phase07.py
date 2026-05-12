@@ -145,3 +145,71 @@ def test_status_displays_stale_artifact_count() -> None:
         assert "1 stale" in refresh_result.output
         assert status_result.exit_code == 0, status_result.output
         assert "Stale artifacts" in status_result.output
+
+
+# ── Incremental file cache tests (Phase 08.5) ─────────────────────────────
+
+
+class TestContextPrunerIncrementalCache:
+    def test_cache_returns_same_content_on_repeated_read(self, tmp_path: Path) -> None:
+        pruner = ContextPruner(tmp_path)
+        file_path = tmp_path / "artifact.md"
+        file_path.write_text("# Hello\n")
+
+        content1 = pruner._read_artifact("artifact.md")
+        content2 = pruner._read_artifact("artifact.md")
+        assert content1 == content2 == "# Hello\n"
+
+    def test_cache_returns_updated_content_after_file_change(self, tmp_path: Path) -> None:
+        pruner = ContextPruner(tmp_path)
+        file_path = tmp_path / "artifact.md"
+        file_path.write_text("# Version 1\n")
+
+        content1 = pruner._read_artifact("artifact.md")
+        assert content1 == "# Version 1\n"
+
+        # Simulate external edit
+        import time
+        file_path.write_text("# Version 2\n")
+        time.sleep(0.01)  # Ensure mtime changes
+
+        content2 = pruner._read_artifact("artifact.md")
+        assert content2 == "# Version 2\n"
+
+    def test_clear_cache_forces_re_read(self, tmp_path: Path) -> None:
+        pruner = ContextPruner(tmp_path)
+        file_path = tmp_path / "artifact.md"
+        file_path.write_text("# Original\n")
+
+        pruner._read_artifact("artifact.md")
+        pruner.clear_cache()
+
+        import time
+        file_path.write_text("# After clear\n")
+        time.sleep(0.01)
+
+        content = pruner._read_artifact("artifact.md")
+        assert content == "# After clear\n"
+
+    def test_cache_hits_skip_disk_read(self, tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        pruner = ContextPruner(tmp_path)
+        file_path = tmp_path / "artifact.md"
+        file_path.write_text("# Cache hit test\n")
+
+        original_read_text = Path.read_text
+        read_count: int = 0
+
+        def counting_read_text(self_obj: Path, *args: object, **kwargs: object) -> str:
+            nonlocal read_count
+            read_count += 1
+            return original_read_text(self_obj, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", counting_read_text)
+
+        # First read: calls disk
+        pruner._read_artifact("artifact.md")
+        assert read_count == 1
+
+        # Second read: should be from cache
+        pruner._read_artifact("artifact.md")
+        assert read_count == 1  # No additional disk read

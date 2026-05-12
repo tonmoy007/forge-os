@@ -15,12 +15,19 @@ class ContextPrunerError(RuntimeError):
 
 
 class ContextPruner:
-    """Select registered artifact context within a deterministic token budget."""
+    """Select registered artifact context within a deterministic token budget.
+
+    Phase 08.5: incremental file reading via mtime + content cache.
+    Skips re-reading files whose modification time has not changed.
+    Call clear_cache() to force re-read on next select().
+    """
 
     def __init__(self, project_root: Path) -> None:
         self.project_root = project_root.resolve()
         self.registry = ArtifactRegistry(self.project_root)
         self.audit_path = self.project_root / ".forge" / "context-selections.jsonl"
+        self._mtime_cache: dict[str, float] = {}
+        self._content_cache: dict[str, str] = {}
 
     def select(self, stage_id: str, *, token_budget: int = 2000) -> ContextSelection:
         if token_budget < 1:
@@ -108,14 +115,38 @@ class ContextPruner:
             visit(stage_path, 0)
         return priorities
 
+    def clear_cache(self) -> None:
+        """Clear the mtime and content caches. Next select() re-reads all files."""
+        self._mtime_cache.clear()
+        self._content_cache.clear()
+
     def _read_artifact(self, relative_path: str) -> str:
         path = self.project_root / relative_path
         try:
-            return path.read_text(encoding="utf-8")
+            current_mtime = path.stat().st_mtime
+        except OSError as exc:
+            raise ContextPrunerError(
+                f"Could not stat selected artifact `{relative_path}`."
+            ) from exc
+
+        # Return cached content if the file hasn't changed
+        cached_mtime = self._mtime_cache.get(relative_path)
+        if cached_mtime is not None and cached_mtime == current_mtime:
+            cached = self._content_cache.get(relative_path)
+            if cached is not None:
+                return cached
+
+        # Read from disk and update cache
+        try:
+            content = path.read_text(encoding="utf-8")
         except OSError as exc:
             raise ContextPrunerError(
                 f"Could not read selected artifact `{relative_path}`."
             ) from exc
+
+        self._mtime_cache[relative_path] = current_mtime
+        self._content_cache[relative_path] = content
+        return content
 
     def _reason(self, stage_id: str, artifact: Artifact, priority: int) -> str:
         if artifact.stage_id == stage_id:
