@@ -1,6 +1,8 @@
 # Forge OS — Agent Orchestration Guide
 
-> **Purpose:** This file tells AI agents and human implementers exactly how to approach the Forge OS codebase, what the current build order is, and conventions to follow. Read this first before implementing anything.
+> **Purpose:** This file tells AI agents and human implementers exactly how to approach the Forge OS codebase, what the current build order is, and conventions to follow.
+>
+> **BEFORE IMPLEMENTING ANYTHING:** Read `plan/ORCHESTRATOR.md` (phase execution rules) and `tasks/lessons.md` (captured lessons from past mistakes).
 
 ---
 
@@ -8,33 +10,27 @@
 
 These rules apply to every session, every phase, every commit. Violations must be called out in code review.
 
-### 0.1 Commit Per Task
-Each logical task gets its own commit. No batch commits of unrelated changes.
-- A "task" = one deliverable from the current phase's task table.
-- Commit messages reference the task ID: `feat: implement ACPClient (P08.18)`.
-- Exception: trivial single-line fixes may be grouped.
-
-### 0.2 No Fabrication
+### 0.1 No Fabrication
 Never invent file paths, API signatures, or test results.
 - Verify file existence with `ls` or `glob` before referencing.
 - Read source definitions before calling any API.
 - Run tests before claiming they pass.
 - If unsure, say "I don't know" — guessing produces bugs.
 
-### 0.3 Capture Lessons Before Fixing
+### 0.2 Capture Lessons Before Fixing
 When the user corrects ANY mistake:
 1. **First** — write the lesson to `tasks/lessons.md` with date, trigger, root cause.
 2. **Second** — fix the code.
 3. **Third** — include `Lesson: <id>` in the commit message.
 The lesson prevents future repetition. It is more valuable than the fix.
 
-### 0.4 Resume Prompt on Interruption
+### 0.3 Resume Prompt on Interruption
 If a session may be interrupted or context reset:
 1. Write `plan/RESUME.md` containing phase, completed tasks, pending tasks, decisions, failing tests.
 2. The resume prompt must be a valid instruction a fresh agent can follow to continue.
 3. Do this before any other action when interruption is anticipated.
 
-### 0.5 Check History Before Starting
+### 0.4 Check History Before Starting
 Before implementing any task:
 1. `git log --oneline -10` — recent commits.
 2. `git diff HEAD` — uncommitted changes.
@@ -73,12 +69,10 @@ The project is built phase by phase in strict order. Do not implement future-pha
 | 05 | `plan/PHASE-05-adapters-agents.md` | Adapters, personas, contracts | ✅ |
 | 06 | `plan/PHASE-06-memory-lessons.md` | Lessons, reflections | ✅ |
 | 07 | `plan/PHASE-07-adg-context.md` | ADG, context pruning | ✅ |
-| **08** | **`plan/PHASE-08-backtrack-security.md`** | **Backtrack, security, ACP** | **✅ complete** |
-| 08.5 | `plan/PHASE-08.5-async-cocoindex.md` | Async migration, CocoIndex, Event Store | ✅ complete |
-| **09** | **`plan/PHASE-09-health-global-skills.md`** | **Health, global memory, skills** | **🔄 in-progress** |
-| 09 | `plan/PHASE-09-health-global-skills.md` | Health, global memory, skills | ✅ complete |
-| **10** | **`plan/PHASE-10-daemon-dreamer-lazy-context.md`** | **Daemon, Dreamer, lazy context** | **🔄 in-progress** |
-| 10 | `plan/PHASE-10-daemon-dreamer-lazy-context.md` | Daemon, Dreamer | 🔲 not-started |
+| 08 | `plan/PHASE-08-backtrack-security.md` | Backtrack, security, ACP | ✅ |
+| 08.5 | `plan/PHASE-08.5-async-cocoindex.md` | Async migration, CocoIndex, Event Store | ✅ |
+| **09** | **`plan/PHASE-09-health-global-skills.md`** | **Health, global memory, skills** | **✅** |
+| **10** | **`plan/PHASE-10-daemon-dreamer-lazy-context.md`** | **Daemon, Dreamer, lazy context** | **🔲** |
 | 11 | `plan/PHASE-11-channels-openclaw-extensions.md` | Channels, OpenClaw, plugins | 🔲 not-started |
 
 ### Status Legend
@@ -141,66 +135,7 @@ src/forge_os/
 
 ---
 
-## 5. Current Phase: Phase 08 Tasks
-
-### What's Done (Backtrack + Security)
-- `BacktrackTicket` schema, `BacktrackRegistry`, `ReworkPlanner` — **all implemented**
-- `forge backtrack list|plan|approve|run` — **all functional**
-- `SecurityProfile` schema, `SecurityEnforcer`, `SecurityAuditLog` — **all implemented**
-- `forge security audit` — **functional**
-
-### What's Pending (Blocking Phase 08 Completion)
-
-**HIGH PRIORITY — ACP Backend (missing backend blocks all ACP CLI commands):**
-
-| Task | File to Create | Priority |
-|------|---------------|----------|
-| `ACPClient` | `src/forge_os/kernel/acp_client.py` | HIGH |
-| `ACPRegistryAdapter` | `src/forge_os/kernel/acp_registry_adapter.py` | HIGH |
-| `ACPUseCases` | `src/forge_os/use_cases/acp.py` | HIGH |
-| `Iterable` protocol on `ACPRegistryAdapter.list_agents()` | Fix return type to work with CLI dict iteration | HIGH |
-| Add `aiohttp` to `pyproject.toml` dependencies | `pyproject.toml` | HIGH |
-
-**MEDIUM PRIORITY — Gates:**
-
-| Task | File to Create/Update | Priority |
-|------|----------------------|----------|
-| `ExternalCommandGate` evaluator | `src/forge_os/gates/external_command.py` | MEDIUM |
-| `MetricThresholdGate` evaluator | `src/forge_os/gates/metric_threshold.py` | MEDIUM |
-| Register both in `GateCoordinator` | `src/forge_os/gates/coordinator.py` | MEDIUM |
-
-**LOW PRIORITY — Remaining Backtrack:**
-
-| Task | Details | Priority |
-|------|---------|----------|
-| ADG cascade generation (P08.04) | Enhance `ReworkPlanner._get_affected_artifacts()` | LOW |
-| Stale flag cleanup (P08.07) | Add `resolve_ticket()` → clear stale flags | LOW |
-| Phase 08 tests | `tests/test_backtrack.py`, `test_security.py`, `test_acp.py`, `test_gates_phase08.py` | LOW |
-
-### Relevant v4 Spec Files
-
-- `plan/v4/KERNEL_UPDATED_PLAN.md` — Full implementation blueprint for ACPClient, ACPRegistryAdapter, LiteLLMAdapter ACP enhancements
-- `plan/v4/SRSv4.1.md` — FR-GT-001-007 (gates), FR-BT-001-003 (backtrack)
-
----
-
-## 6. Next Phase: Phase 08.5 Overview
-
-After Phase 08 exits, Phase 08.5 contains three **independent workstreams** that share no code dependencies:
-
-| Workstream | Files | Effort |
-|-----------|-------|--------|
-| **A: Async adapter migration** | `adapters/base.py`, `adapters/dummy.py`, `agents/executor.py` | 1-2 weeks |
-| **B: CocoIndex evaluation & POC** | `context/pruner.py`, `context/pipeline.py` (new) | 1 week |
-| **C: Event Store groundwork** | `events/store.py` (new), `events/model.py`, `core/state_manager.py` | 1-2 weeks |
-
-These may be implemented in any order or by parallel agents. Each has its own acceptance criteria and tests.
-
-Full details in `plan/PHASE-08.5-async-cocoindex.md`.
-
----
-
-## 7. Clean Code & Separation of Concerns (Non-Negotiable)
+## 5. Clean Code & Separation of Concerns (Non-Negotiable)
 
 ### Layer Architecture (Strict Dependency Direction)
 
@@ -277,7 +212,7 @@ New tests:           tests/test_<module>.py
 
 ---
 
-## 8. Key References
+## 6. Key References
 
 | Document | When to Read |
 |----------|-------------|
@@ -295,7 +230,7 @@ New tests:           tests/test_<module>.py
 
 ---
 
-## 9. Quick Start for Implementers
+## 7. Quick Start for Implementers
 
 ```bash
 # Setup

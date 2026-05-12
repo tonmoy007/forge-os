@@ -32,6 +32,8 @@ This directory splits the Forge OS build into independent phase files. The goal 
 
 ## Discipline Rules (ALL Phases)
 
+Pre‑requisite: every agent MUST read `plan/ORCHESTRATOR.md` and `tasks/lessons.md` before starting implementation.
+
 ### Rule 1: Commit Per Task
 Every logical task gets its own commit. Do not batch unrelated changes into one commit.
 - A "task" is one deliverable item from the phase task table.
