@@ -404,3 +404,160 @@ class TestACPHealthUseCases:
         assert "agents" in report
         assert "session_actions" in report
         assert "healthy" in report
+
+
+# ── Hook test harness (P09.02) ──────────────────────────────────────────────
+
+
+class TestHookHarness:
+    def test_hook_registration_and_execution(self) -> None:
+        """Hook harness: register a hook, fire event, verify execution."""
+        from forge_os.events.model import new_event
+        from forge_os.hooks.registry import HookRegistry
+
+        registry = HookRegistry()
+        results: list[str] = []
+
+        def sample_hook(event):  # type: ignore[no-untyped-def]
+            results.append(event.event_type)
+
+        registry.register("StageStarted", sample_hook, name="test-hook", order=0)
+        event = new_event("StageStarted", stage_id="build", actor_type="test", actor_id="t1")
+        registry.run(event)
+
+        assert len(results) == 1
+        assert results[0] == "StageStarted"
+
+    def test_multiple_hooks_in_order(self) -> None:
+        """Hooks execute in registered order."""
+        from forge_os.events.model import new_event
+        from forge_os.hooks.registry import HookRegistry
+
+        registry = HookRegistry()
+        order: list[int] = []
+
+        def make_hook(n: int):
+            def hook(event):  # type: ignore[no-untyped-def]
+                order.append(n)
+            return hook
+
+        et = "StageStarted"
+        registry.register(et, make_hook(1), name="h1", order=1)
+        registry.register(et, make_hook(2), name="h2", order=2)
+        registry.register(et, make_hook(0), name="h0", order=0)
+
+        registry.run(new_event(et, actor_type="test", actor_id="t"))
+        assert order == [0, 1, 2]
+
+
+# ── Gate simulation fixtures (P09.03-04) ──────────────────────────────────
+
+
+class TestGateSimulations:
+    def test_known_good_gate_passes(self, tmp_path: Path) -> None:
+        """A gate expecting an existing file passes."""
+        from forge_os.gates.coordinator import GateCoordinator
+        from forge_os.gates.models import GateCriterion
+
+        (tmp_path / "pipeline").mkdir()
+        (tmp_path / "SRS.md").write_text("# Requirements\n")
+
+        coordinator = GateCoordinator(tmp_path)
+        gate = GateCriterion(
+            id="good-gate",
+            name="SRS exists",
+            type="required_file",
+            criteria={"path": "SRS.md"},
+            enabled=True,
+        )
+        result = coordinator.evaluate_gate(gate)
+        assert result.status == "pass"
+
+    def test_known_bad_gate_fails(self, tmp_path: Path) -> None:
+        """A gate expecting a missing file fails."""
+        from forge_os.gates.coordinator import GateCoordinator
+        from forge_os.gates.models import GateCriterion
+
+        (tmp_path / "pipeline").mkdir()
+        coordinator = GateCoordinator(tmp_path)
+        gate = GateCriterion(
+            id="bad-gate",
+            name="Missing SRS",
+            type="required_file",
+            criteria={"path": "SRS.md"},
+            enabled=True,
+        )
+        result = coordinator.evaluate_gate(gate)
+        assert result.status == "fail"
+
+    def test_pattern_gate_good(self, tmp_path: Path) -> None:
+        """Pattern gate passes when pattern is found."""
+        from forge_os.gates.coordinator import GateCoordinator
+        from forge_os.gates.models import GateCriterion
+
+        (tmp_path / "pipeline").mkdir()
+        (tmp_path / "main.py").write_text("def main():\n    pass\n")
+        coordinator = GateCoordinator(tmp_path)
+        gate = GateCriterion(
+            id="pattern-pass",
+            name="Has main function",
+            type="pattern",
+            criteria={"path": "main.py", "pattern": r"def main\b"},
+            enabled=True,
+        )
+        result = coordinator.evaluate_gate(gate)
+        assert result.status == "pass"
+
+    def test_pattern_gate_bad(self, tmp_path: Path) -> None:
+        """Pattern gate fails when pattern is absent."""
+        from forge_os.gates.coordinator import GateCoordinator
+        from forge_os.gates.models import GateCriterion
+
+        (tmp_path / "pipeline").mkdir()
+        (tmp_path / "empty.py").write_text("# nothing\n")
+        coordinator = GateCoordinator(tmp_path)
+        gate = GateCriterion(
+            id="pattern-fail",
+            name="Missing main",
+            type="pattern",
+            criteria={"path": "empty.py", "pattern": r"def main\b"},
+            enabled=True,
+        )
+        result = coordinator.evaluate_gate(gate)
+        assert result.status == "fail"
+
+
+# ── Knowledge integrity tests (P09.05-06) ──────────────────────────────────
+
+
+class TestKnowledgeIntegrity:
+    def test_scan_no_issues(self, tmp_path: Path) -> None:
+        """No issues when lessons don't reference missing artifacts."""
+        from forge_os.use_cases.knowledge import KnowledgeUseCases
+
+        uc = KnowledgeUseCases(tmp_path)
+        refs = uc.scan_lesson_references()
+        assert refs == []
+
+    def test_scan_conflicts_no_duplicates(self, tmp_path: Path) -> None:
+        from forge_os.use_cases.knowledge import KnowledgeUseCases
+
+        uc = KnowledgeUseCases(tmp_path)
+        conflicts = uc.scan_lesson_conflicts()
+        assert conflicts == []
+
+    def test_token_report_empty(self, tmp_path: Path) -> None:
+        from forge_os.use_cases.knowledge import KnowledgeUseCases
+
+        uc = KnowledgeUseCases(tmp_path)
+        report = uc.report_token_budget()
+        assert report["total_artifacts"] == 0
+        assert report["total_tokens"] == 0
+
+
+# ── Final Phase 09 validation count ─────────────────────────────────────────
+
+
+def test_phase09_test_count() -> None:
+    """Placeholder to track total Phase 09 test count."""
+    assert True
