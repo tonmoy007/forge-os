@@ -1,7 +1,7 @@
 # Current Forge OS Phase
 
 > **Session Continuity:** If this session is interrupted, run `git log --oneline -5 && git diff HEAD && cat plan/RESUME.md 2>/dev/null || echo "No RESUME.md"` before continuing.
-> Last validated: 67 tests passed, ruff clean, compileall clean.
+> Last validated: 130 tests passed, ruff clean (new files), compileall clean.
 
 ## Current Phase
 
@@ -107,63 +107,57 @@ None currently.
 ## Phase 08 Task Summary
 
 ### Backtrack & Rework
-| ID | Task |
-|---|---|
-| P08.01 | Define backtrack ticket schema |
-| P08.02 | Add `forge backtrack list` ✅ |
-| P08.03 | Add `forge backtrack plan <id>` ✅ |
-| P08.04 | Generate affected stages from ADG |
-| P08.05 | Add `forge backtrack approve <id>` ✅ |
-| P08.06 | Add `forge backtrack run <id>` in diff mode ✅ |
-| P08.07 | Clear stale flags after revalidation |
+| ID | Task | Status |
+|---|---|---|
+| P08.01 | Define backtrack ticket schema | ✅ |
+| P08.02 | Add `forge backtrack list` | ✅ |
+| P08.03 | Add `forge backtrack plan <id>` | ✅ |
+| P08.04 | Generate affected stages from ADG | 🔄 basic implementation |
+| P08.05 | Add `forge backtrack approve <id>` | ✅ |
+| P08.06 | Add `forge backtrack run <id>` in diff mode | ✅ |
+| P08.07 | Clear stale flags after revalidation | 🔄 pending |
 
 ### Security Profiles & Enforcement
-| ID | Task |
-|---|---|
-| P08.08 | Define tool/security profile schema |
-| P08.09 | Enforce path restrictions for tools |
-| P08.10 | Prevent agents from directly writing state files |
-| P08.11 | Add command allowlist and timeout runner |
-| P08.14 | Write `.forge/security-audit.jsonl` ✅ |
+| ID | Task | Status |
+|---|---|---|
+| P08.08 | Define tool/security profile schema | ✅ |
+| P08.09 | Enforce path restrictions for tools | ✅ |
+| P08.10 | Prevent agents from directly writing state files | ✅ |
+| P08.11 | Add command allowlist and timeout runner | ✅ |
+| P08.14 | Write `.forge/security-audit.jsonl` | ✅ |
 
 ### Gates
-| ID | Task |
-|---|---|
-| P08.12 | Implement `ExternalCommand` gate |
-| P08.13 | Implement `MetricThreshold` gate |
-| P08.15 | Add tests for rework/security/gates |
+| ID | Task | Status |
+|---|---|---|
+| P08.12 | Implement `ExternalCommand` gate evaluator | ✅ |
+| P08.13 | Implement `MetricThreshold` gate evaluator | ✅ |
+| P08.15 | Phase 08 tests (ACP, gates, backtrack, security) | ✅ 63 new tests |
 
-### ACP Registry & Agent Discovery
-| ID | Task |
-|---|---|
-| P08.16 | Define `ACPRegistryAdapter` interface |
-| P08.17 | Implement `ACPRegistryAdapter` |
-| P08.18 | Implement `ACPClient` (JSON-RPC over stdio) ✅ |
-| P08.19 | Add session management methods ✅ |
-| P08.20 | Add `session_config_options` |
-| P08.21 | Add session info update handling |
-| P08.22 | Implement agent installation (binary/npx/uvx) ✅ |
-| P08.23 | Add `forge acp discover` ✅ |
-| P08.24 | Add `forge acp install <agent-id>` ✅ |
-| P08.25 | Add `forge acp list` ✅ |
-| P08.26 | Add `forge acp sessions` ✅ |
-| P08.27 | Add `forge acp close-session <id>` ✅ |
+### ACP Backend Implementation
+| ID | Task | Status |
+|---|---|---|
+| P08.16-P08.17 | `ACPClient` & `ACPRegistryAdapter` | ✅ `kernel/` module created |
+| P08.18-P08.19 | Session management (list, resume, close) | ✅ |
+| P08.20-P08.21 | `session_config_options`, session info update | ✅ |
+| P08.22 | Agent installation (binary/npx/uvx) | ✅ |
+| P08.23-P08.27 | ACP CLI commands now functional | ✅ backend wired |
 
 ### IKernelAdapter ACP Enhancements
-| ID | Task |
-|---|---|
-| P08.28 | Add `spawn_acp_agent` to `IKernelAdapter` |
-| P08.29 | Add `list_acp_agents` to `IKernelAdapter` |
-| P08.30 | Add `get_acp_registry_adapter` to `IKernelAdapter` |
-| P08.31 | Add `is_acp_available` to `IKernelAdapter` |
-| P08.32 | Enhance `LiteLLMAdapter` with ACP support |
+| ID | Task | Status |
+|---|---|---|
+| P08.28-P08.31 | ACP methods on protocol + base class | ✅ added to `KernelAdapter` protocol & `BaseKernelAdapter` |
 
-### ACP Adapter Fallback Chain
-| ID | Task |
+### Adapter Priority Chain
+| ID | Task | Status |
+|---|---|---|
+| P08.32-P08.35 | Fallback chain + LiteLLMAdapter ACP | 🔄 deferred to Phase 08.5 async migration |
+
+### Phase 08 Validation
+| Item | Status |
 |---|---|
-| P08.33 | Implement adapter priority chain |
-| P08.34 | Wire ACP agents into backtrack rerun |
-| P08.35 | ACP integration tests |
+| Tests pass | ✅ 130 total (67 baseline + 63 new) |
+| Ruff lint | ✅ clean for new/modified files |
+| Compileall | ✅ clean |
 
 ## Notes For The Next Implementer
 
@@ -237,8 +231,8 @@ src/forge_os/
 
 Last validation commands:
 
-- `.venv/bin/python -m pytest` — 67 passed.
-- `.venv/bin/python -m ruff check src tests` — passed.
+- `.venv/bin/python -m pytest` — 130 passed.
+- `.venv/bin/python -m ruff check src tests` — clean for new/modified files.
 - `.venv/bin/python -m compileall src tests` — passed.
 
-Expected test count after Phase 08: 120+ passed.
+Expected test count after Phase 08: 120+ ✅ (130 achieved)

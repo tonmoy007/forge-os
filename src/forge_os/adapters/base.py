@@ -67,6 +67,34 @@ class KernelAdapter(Protocol):
         """Return whether an optional runtime capability is available."""
         ...
 
+    # ── ACP Integration (Phase 08) ────────────────────────────────────────
+
+    def get_acp_registry_adapter(self) -> object:  # ACPRegistryAdapter
+        """Return the ACP Registry adapter for agent discovery and installation.
+
+        Raises UnsupportedAdapterCapability if ACP is not available.
+        """
+        ...
+
+    def spawn_acp_agent(self, agent_id: str, session_id: str | None = None) -> object:  # ACPClient
+        """Spawn an ACP-compatible agent from the registry.
+
+        Args:
+            agent_id: Identifier from the ACP Registry.
+            session_id: Optional existing session to resume.
+
+        Returns an ACPClient ready for communication.
+        """
+        ...
+
+    def list_acp_agents(self) -> list[dict[str, object]]:
+        """List all ACP agents available in the registry."""
+        ...
+
+    def is_acp_available(self) -> bool:
+        """Check if ACP mode is available (registry accessible)."""
+        ...
+
 
 class UnsupportedAdapterCapability(RuntimeError):
     """Raised when optional adapter control is requested but unsupported."""
@@ -95,3 +123,21 @@ class BaseKernelAdapter:
 
     def get_default_tools(self) -> ToolList:
         return []
+
+    # ── ACP Integration (Phase 08) ────────────────────────────────────────
+
+    def get_acp_registry_adapter(self) -> object:
+        raise UnsupportedAdapterCapability(
+            f"Adapter {self.adapter_id} does not support ACP registry access"
+        )
+
+    def spawn_acp_agent(self, agent_id: str, session_id: str | None = None) -> object:
+        raise UnsupportedAdapterCapability(
+            f"Adapter {self.adapter_id} does not support ACP agent spawning"
+        )
+
+    def list_acp_agents(self) -> list[dict[str, object]]:
+        return []
+
+    def is_acp_available(self) -> bool:
+        return False

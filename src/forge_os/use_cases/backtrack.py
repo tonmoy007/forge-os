@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Optional
 
 from forge_os.project.backtrack_registry import BacktrackRegistry
 from forge_os.project.rework_planner import ReworkPlanner
@@ -19,7 +18,7 @@ class BacktrackUseCases:
     def list_tickets(self) -> list[BacktrackTicket]:
         return self.backtrack_registry.list_tickets()
 
-    def get_ticket_plan(self, ticket_id: str) -> Optional[BacktrackTicket]:
+    def get_ticket_plan(self, ticket_id: str) -> BacktrackTicket | None:
         return self.backtrack_registry.get_ticket(ticket_id)
 
     def approve_ticket(self, ticket_id: str) -> bool:
@@ -30,3 +29,7 @@ class BacktrackUseCases:
 
     def resolve_ticket(self, ticket_id: str) -> bool:
         return self.rework_planner.resolve_ticket(ticket_id)
+
+    def get_downstream_stages(self, target_stage_id: str) -> list[str]:
+        """Return stage IDs affected by changes to the given stage's artifacts."""
+        return self.rework_planner.get_downstream_stages(target_stage_id)

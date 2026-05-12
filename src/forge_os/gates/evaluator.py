@@ -1,10 +1,11 @@
-import time
+import json
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
-import json
 
 from forge_os.gates.models import ExternalCommandGate, MetricThresholdGate
+
 
 class GateEvaluator:
     """Evaluates gates, including new external command and metric gates."""
@@ -81,23 +82,30 @@ class GateEvaluator:
             
             # Comparison logic
             passed = False
-            if gate.operator == ">=": passed = value >= gate.threshold
-            elif gate.operator == ">": passed = value > gate.threshold
-            elif gate.operator == "<=": passed = value <= gate.threshold
-            elif gate.operator == "<": passed = value < gate.threshold
-            elif gate.operator == "==": passed = value == gate.threshold
-            
+            if gate.operator == ">=":
+                passed = value >= gate.threshold
+            elif gate.operator == ">":
+                passed = value > gate.threshold
+            elif gate.operator == "<=":
+                passed = value <= gate.threshold
+            elif gate.operator == "<":
+                passed = value < gate.threshold
+            elif gate.operator == "==":
+                passed = value == gate.threshold
+
             status = "pass" if passed else "fail"
-            summary = f"Metric {gate.metric_key} is {value} (Threshold {gate.operator} {gate.threshold})"
-            
+            summary = (
+                f"Metric {gate.metric_key} is {value} "
+                f"(Threshold {gate.operator} {gate.threshold})"
+            )
+
         except Exception as e:
             status = "error"
             summary = str(e)
-            details = {}
-            
+
         return {
             "status": status,
             "summary": summary,
             "details": {},
-            "duration_ms": int((time.time() - start_time) * 1000)
+            "duration_ms": int((time.time() - start_time) * 1000),
         }

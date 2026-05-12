@@ -8,8 +8,14 @@ from time import perf_counter
 
 from forge_os.events.bus import EventBus
 from forge_os.events.model import new_event, utc_now
+from forge_os.gates.evaluator import GateEvaluator
 from forge_os.gates.loader import load_gate_file
-from forge_os.gates.models import GateCriterion, GateResult
+from forge_os.gates.models import (
+    ExternalCommandGate,
+    GateCriterion,
+    GateResult,
+    MetricThresholdGate,
+)
 
 
 class GateEvaluationError(RuntimeError):
@@ -67,10 +73,44 @@ class GateCoordinator:
                 status, summary, fix_hint, details = self._check_required_file(gate)
             elif gate.type == "pattern":
                 status, summary, fix_hint, details = self._check_pattern(gate)
+            elif gate.type == "external_command":
+                evaluator = GateEvaluator(self.project_root)
+                command_gate = ExternalCommandGate(
+                    id=gate.id,
+                    name=gate.name,
+                    command=list(gate.criteria.get("command", [])),
+                    timeout_seconds=gate.criteria.get("timeout", 30),
+                    severity=gate.severity,
+                    enabled=gate.enabled,
+                )
+                result = evaluator.evaluate_external_command(command_gate)
+                status = result["status"]
+                summary = result["summary"]
+                fix_hint = None
+                details = result["details"]
+            elif gate.type == "metric_threshold":
+                evaluator = GateEvaluator(self.project_root)
+                metric_gate = MetricThresholdGate(
+                    id=gate.id,
+                    name=gate.name,
+                    metric_file=gate.criteria.get("metric_file", ""),
+                    metric_key=gate.criteria.get("metric_key", ""),
+                    threshold=gate.criteria.get("threshold", 0.0),
+                    operator=gate.criteria.get("operator", ">="),
+                    severity=gate.severity,
+                    enabled=gate.enabled,
+                )
+                result = evaluator.evaluate_metric_threshold(metric_gate)
+                status = result["status"]
+                summary = result["summary"]
+                fix_hint = None
+                details = {}
             else:
                 status = "error"
                 summary = f"Unsupported gate type `{gate.type}`."
-                fix_hint = "Use a supported gate type: required_file or pattern."
+                fix_hint = (
+                    "Use: required_file, pattern, external_command, or metric_threshold."
+                )
                 details = {}
         except Exception as exc:  # noqa: BLE001 - normalize checker failures
             status = "error"
