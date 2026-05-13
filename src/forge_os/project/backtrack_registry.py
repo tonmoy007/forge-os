@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
-from typing import Optional
 
 from forge_os.schemas.backtrack import BacktrackStore, BacktrackTicket
+
 
 class BacktrackRegistry:
     """Manage `.forge/backtrack.json`."""
@@ -32,7 +32,7 @@ class BacktrackRegistry:
         store.tickets.append(ticket)
         self.save(store)
 
-    def update_ticket(self, ticket_id: str, **updates) -> Optional[BacktrackTicket]:
+    def update_ticket(self, ticket_id: str, **updates) -> BacktrackTicket | None:
         store = self.load()
         for ticket in store.tickets:
             if ticket.ticket_id == ticket_id:
@@ -42,7 +42,7 @@ class BacktrackRegistry:
                 return ticket
         return None
 
-    def get_ticket(self, ticket_id: str) -> Optional[BacktrackTicket]:
+    def get_ticket(self, ticket_id: str) -> BacktrackTicket | None:
         store = self.load()
         for ticket in store.tickets:
             if ticket.ticket_id == ticket_id:

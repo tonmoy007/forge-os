@@ -161,14 +161,14 @@ class TestAsyncDummyAdapter:
         assert record.adapter == "async-dummy"
         assert record.metadata.get("async") is True
 
-    async def test_run_stage_agent_async_no_project(
-        self, tmp_path: Path, state: PipelineState
+    async def test_run_stage_agent_async_invalid_stage(
+        self, project_root: Path, state: PipelineState
     ) -> None:
-        """Async executor raises on uninitialized project."""
+        """Async executor raises on invalid stage."""
         from forge_os.agents.executor import AgentExecutionError, run_stage_agent_async
 
         with pytest.raises(AgentExecutionError):
-            await run_stage_agent_async(tmp_path, state, "srs")
+            await run_stage_agent_async(project_root, state, "nonexistent_stage")
 
 
 # ── AsyncBaseKernelAdapter tests ────────────────────────────────────────────

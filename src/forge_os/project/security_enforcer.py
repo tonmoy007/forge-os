@@ -1,9 +1,16 @@
 import subprocess
 import time
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional, Sequence, Any
+from typing import Any
 
-from forge_os.schemas.security import SecurityProfile, SecurityPolicy, SecurityDecision, SecurityAuditEntry
+from forge_os.schemas.security import (
+    SecurityAuditEntry,
+    SecurityDecision,
+    SecurityPolicy,
+    SecurityProfile,
+)
+
 
 class SecurityEnforcer:
     """Enforces security profiles and audits actions."""
@@ -13,7 +20,13 @@ class SecurityEnforcer:
         self.profile = profile
         self.audit_log = audit_log
 
-    def validate_action(self, actor: dict, action: str, target: Any = None, capability: str = None) -> SecurityDecision:
+    def validate_action(
+        self,
+        actor: dict,
+        action: str,
+        target: Any = None,
+        capability: str = None,
+    ) -> SecurityDecision:
         """Check if an action is allowed by the security profile."""
         
         # Find matching capability rule
@@ -42,11 +55,18 @@ class SecurityEnforcer:
             
         return decision
 
-    def run_command(self, actor: dict, command: Sequence[str], timeout: Optional[int] = None) -> subprocess.CompletedProcess:
+    def run_command(
+        self,
+        actor: dict,
+        command: Sequence[str],
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess:
         """Runs a command with a timeout and security check."""
         
         # Check if command execution is allowed
-        decision = self.validate_action(actor, "execute_command", target=command, capability="shell")
+        decision = self.validate_action(
+            actor, "execute_command", target=command, capability="shell",
+        )
         if decision == SecurityDecision.DENIED:
             raise PermissionError(f"Command execution denied by security profile: {command}")
 

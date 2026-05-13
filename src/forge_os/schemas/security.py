@@ -1,14 +1,17 @@
+from collections.abc import Sequence
 from datetime import datetime
-from enum import Enum
-from typing import Optional, Sequence, Any
+from enum import StrEnum
+from typing import Any
+
 from pydantic import BaseModel, Field
 
-class SecurityPolicy(str, Enum):
+
+class SecurityPolicy(StrEnum):
     ALLOW = "allow"
     DENY = "deny"
     PROMPT = "prompt"
 
-class SecurityDecision(str, Enum):
+class SecurityDecision(StrEnum):
     ALLOWED = "allowed"
     DENIED = "denied"
     WARNED = "warned"
@@ -18,9 +21,9 @@ class CapabilityRule(BaseModel):
     """Rule for a specific tool or system capability."""
     capability: str
     policy: SecurityPolicy
-    scope: Optional[dict[str, Any]] = None
+    scope: dict[str, Any] | None = None
     requires_approval: bool = False
-    timeout_seconds: Optional[int] = None
+    timeout_seconds: int | None = None
 
 class SecurityProfile(BaseModel):
     """Defines allowed capabilities and approval requirements."""
@@ -37,9 +40,9 @@ class SecurityAuditEntry(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
     actor: dict[str, Any]
     action: str
-    target: Optional[Any] = None
-    capability: Optional[str] = None
+    target: Any | None = None
+    capability: str | None = None
     decision: SecurityDecision
-    approval: Optional[dict[str, Any]] = None
-    reason: Optional[str] = None
+    approval: dict[str, Any] | None = None
+    reason: str | None = None
     redactions: Sequence[str] = Field(default_factory=list)

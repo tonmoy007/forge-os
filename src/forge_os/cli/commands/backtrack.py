@@ -10,7 +10,6 @@ from rich.table import Table
 
 from forge_os.cli.commands._shared import (
     console,
-    resolve_project_root,
     resolve_project_status,
 )
 from forge_os.core import StateError
@@ -23,7 +22,10 @@ backtrack_app = typer.Typer(help="Manage backtrack tickets and rework planning."
 
 @backtrack_app.command("list")
 def backtrack_list(
-    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
 ) -> None:
     """List all backtrack tickets."""
 
@@ -62,7 +64,10 @@ def backtrack_list(
 @backtrack_app.command("plan")
 def backtrack_plan(
     ticket_id: Annotated[str, typer.Argument(help="Backtrack ticket ID.")],
-    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
 ) -> None:
     """Show the rework plan for a backtrack ticket."""
 
@@ -91,7 +96,10 @@ def backtrack_plan(
 @backtrack_app.command("approve")
 def backtrack_approve(
     ticket_id: Annotated[str, typer.Argument(help="Backtrack ticket ID.")],
-    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
 ) -> None:
     """Approve a backtrack ticket for execution."""
 
@@ -112,7 +120,10 @@ def backtrack_approve(
 @backtrack_app.command("run")
 def backtrack_run(
     ticket_id: Annotated[str, typer.Argument(help="Backtrack ticket ID.")],
-    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
 ) -> None:
     """Execute the rework plan for an approved backtrack ticket."""
 
@@ -126,5 +137,8 @@ def backtrack_run(
     if use_cases.run_rework(ticket_id):
         console.print(f"[green]Rework started for {ticket_id}. Artifacts marked stale.[/green]")
     else:
-        console.print(f"[red]Failed to run rework for {ticket_id}. Ensure the ticket is approved.[/red]")
+        console.print(
+            f"[red]Failed to run rework for {ticket_id}. "
+            "Ensure the ticket is approved.[/red]"
+        )
         raise typer.Exit(code=1)

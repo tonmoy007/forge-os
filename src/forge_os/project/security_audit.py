@@ -1,7 +1,9 @@
 import json
 from pathlib import Path
 from typing import Any
+
 from forge_os.schemas.security import SecurityAuditEntry
+
 
 class SecurityAuditLog:
     """Append-only security audit log."""
@@ -19,7 +21,7 @@ class SecurityAuditLog:
         if not self.log_path.exists():
             return []
         entries = []
-        with open(self.log_path, "r", encoding="utf-8") as f:
+        with open(self.log_path, encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     entries.append(json.loads(line))

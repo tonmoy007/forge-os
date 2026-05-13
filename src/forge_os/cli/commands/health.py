@@ -13,7 +13,10 @@ health_app = typer.Typer(help="Check Forge OS subsystem health.")
 
 @health_app.command("check")
 def health_check(
-    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
 ) -> None:
     """Run full system health check across all subsystems."""
 
@@ -24,7 +27,10 @@ def health_check(
         use_cases = HealthUseCases(root)
         report = use_cases.run_full_check()
     except ImportError:
-        console.print("[yellow]Running basic health check (full health module not available).[/yellow]")
+        console.print(
+            "[yellow]Running basic health check "
+            "(full health module not available).[/yellow]"
+        )
         _run_basic_health_check(path)
         return
     except Exception as exc:
@@ -42,7 +48,10 @@ def _run_basic_health_check(path: Path | None) -> None:
     try:
         root, config, state = resolve_project_status(path)
         console.print(f"✅ Config: loaded (profile={config.profile})")
-        console.print(f"✅ State: {state.schema_version} (current stage={state.current_stage_id or 'none'})")
+        console.print(
+            f"✅ State: {state.schema_version} "
+            f"(current stage={state.current_stage_id or 'none'})"
+        )
         stale = stale_artifact_count(root)
         console.print(f"{'✅' if stale == 0 else '⚠️'} Artifacts: {stale} stale")
     except Exception as exc:

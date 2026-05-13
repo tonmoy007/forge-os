@@ -9,7 +9,11 @@ from forge_os.project.security_enforcer import SecurityEnforcer
 class GateUseCases:
     """Encapsulates business logic for gate evaluation."""
 
-    def __init__(self, project_root: Path, security_enforcer: SecurityEnforcer | None = None) -> None:
+    def __init__(
+        self,
+        project_root: Path,
+        security_enforcer: SecurityEnforcer | None = None,
+    ) -> None:
         self.project_root = project_root
         self.evaluator = GateEvaluator(project_root, security_enforcer)
 

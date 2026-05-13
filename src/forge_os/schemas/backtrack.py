@@ -1,9 +1,11 @@
+from collections.abc import Sequence
 from datetime import datetime
-from enum import Enum
-from typing import Optional, Sequence
+from enum import StrEnum
+
 from pydantic import BaseModel, Field
 
-class BacktrackStatus(str, Enum):
+
+class BacktrackStatus(StrEnum):
     OPEN = "open"
     APPROVED = "approved"
     IN_PROGRESS = "in_progress"
@@ -21,7 +23,7 @@ class BacktrackTicket(BaseModel):
     affected_artifacts: Sequence[str] = Field(default_factory=list)
     requires_approval: bool = True
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
-    resolved_at: Optional[str] = None
+    resolved_at: str | None = None
 
 class BacktrackStore(BaseModel):
     """Container for persisted backtrack tickets."""

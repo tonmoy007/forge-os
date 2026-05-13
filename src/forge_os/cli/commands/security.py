@@ -18,7 +18,10 @@ security_app = typer.Typer(help="View security audit logs.")
 
 @security_app.command("audit")
 def security_audit(
-    path: Annotated[Path | None, typer.Option("--path", "-p", help="Directory inside a Forge project.")] = None,
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
     limit: Annotated[int, typer.Option("--limit", "-l", help="Number of entries to show.")] = 20,
 ) -> None:
     """Show recent security audit log entries."""

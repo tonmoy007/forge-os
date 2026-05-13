@@ -18,5 +18,11 @@ class SecurityUseCases:
     def get_audit_entries(self, limit: int = 20) -> list[dict[str, Any]]:
         return self.audit_log.read_all()[-limit:]
 
-    def validate_action(self, actor: dict, action: str, target: Any = None, capability: str = None) -> str:
+    def validate_action(
+        self,
+        actor: dict,
+        action: str,
+        target: Any = None,
+        capability: str = None,
+    ) -> str:
         return self.enforcer.validate_action(actor, action, target, capability)
