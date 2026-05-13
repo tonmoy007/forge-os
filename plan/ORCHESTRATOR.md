@@ -1,5 +1,11 @@
 # Forge OS Phase Orchestrator
 
+> **2026-05-13 update.** This file is now the **phase-mode operating handbook** (the mode used for Fork B in `STATUS.md`). The cross-cutting orchestration playbook — clean architecture, clean code, separation of concerns, per-commit/per-feature/per-track checklists, the execution loop, the decision tree for "where does this go?" — lives in `plan/PLAYBOOK.md`.
+>
+> **Read order:** `STATUS.md` → `plan/PLAYBOOK.md` → this file → the current phase file.
+>
+> Rules below are layered on top of PLAYBOOK; they do not replace it. Where the two overlap, PLAYBOOK is the canonical statement.
+
 This directory splits the Forge OS build into independent phase files. The goal is to let an implementer work phase by phase without remembering the full roadmap.
 
 ## Current Source Files
@@ -147,6 +153,9 @@ Use these values in `CURRENT_PHASE.md` and phase files:
 | 09 | `PHASE-09-health-global-skills.md` | Health checks, global memory, skill mining |
 | 10 | `PHASE-10-daemon-dreamer-lazy-context.md` | Background daemon, Dreamer, lazy context |
 | 11 | `PHASE-11-channels-openclaw-extensions.md` | Channels, OpenClawAdapter, extensions |
+| 12 | `PHASE-12-integration-perf-testing.md` | Integration + performance testing, NFR validation (Fork B) |
+| 13 | `PHASE-13-docs-release-engineering.md` | Docs, packaging, release engineering (Fork B) |
+| A1 | `fork-a/PHASE-A1-commitgate-extract.md` | `commitgate` library extract — 3-week ship (Fork A only) |
 
 ## Suggested User Prompt To Continue
 

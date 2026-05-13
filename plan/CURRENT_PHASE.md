@@ -1,5 +1,9 @@
 # Current Forge OS Phase
 
+> ⛔ **STRATEGIC PAUSE — 2026-05-13.** Phase 10 implementation is **paused** pending the strategic decisions in `/STATUS.md` (D4-D8: name three real users, pick fork A/B/C, set kill criteria). Do not resume tactical phase work until D5 resolves.
+>
+> **Read order:** `/STATUS.md` → `/CLAUDE.md` → this file → the current phase file.
+>
 > **Session Continuity:** If this session is interrupted, run `git log --oneline -5 && git diff HEAD && cat plan/RESUME.md 2>/dev/null || echo "No RESUME.md"` before continuing.
 > Last validated: 230 tests passed, ruff clean, compileall clean.
 
@@ -7,7 +11,7 @@
 
 - Phase: 10
 - File: `plan/PHASE-10-daemon-dreamer-lazy-context.md`
-- Status: in-progress
+- Status: **paused (strategic review)** — was: in-progress
 
 ## Current Objective
 

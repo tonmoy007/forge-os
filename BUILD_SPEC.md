@@ -32,7 +32,7 @@ Recommended libraries:
 - Schemas: `pydantic`
 - YAML: `pyyaml` or `ruamel.yaml`
 - Async HTTP: `aiohttp` (Phase 08+)
-- Incremental indexing: `cocoindex` (Phase 08.5+, optional)
+- Incremental indexing: in-process mtime+content cache in `context/pruner.py`. CocoIndex was evaluated and **rejected** (lessons.md L004 — requires PostgreSQL, incompatible with local-first design).
 - Graphs: `networkx`
 - Tests: `pytest`
 - Scheduling later: `APScheduler`
@@ -82,7 +82,7 @@ Forge OS should be built from the inside out:
 7. Memory/reflection/lessons
 8. ADG/context pruning
 9. Backtrack/security
-10. **Async migration, CocoIndex incremental indexing, Event Store groundwork (Phase 08.5)**
+10. **Async migration, mtime+content cache for incremental indexing, Event Store groundwork (Phase 08.5 — CocoIndex rejected per L004)**
 11. Health/global memory/skills
 12. Daemon/Dreamer/lazy context
 13. Channels/OpenClaw/extensions

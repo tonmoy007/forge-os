@@ -2,7 +2,9 @@
 
 > **Purpose:** This file tells AI agents and human implementers exactly how to approach the Forge OS codebase, what the current build order is, and conventions to follow.
 >
-> **BEFORE IMPLEMENTING ANYTHING:** Read `plan/ORCHESTRATOR.md` (phase execution rules) and `tasks/lessons.md` (captured lessons from past mistakes).
+> **2026-05-13 update.** The project is in **strategic pause** pending decisions D4-D8 in `/STATUS.md`. Cross-cutting orchestration + clean architecture + clean code + separation-of-concerns discipline now lives in `plan/PLAYBOOK.md` — read that first, then this file, then `plan/ORCHESTRATOR.md` (phase-mode only).
+>
+> **BEFORE IMPLEMENTING ANYTHING:** Read `/STATUS.md` (strategic state) → `plan/PLAYBOOK.md` (execution discipline) → `plan/ORCHESTRATOR.md` (phase execution rules, Fork B) → `tasks/lessons.md` (captured lessons from past mistakes).
 
 ---
 
@@ -74,6 +76,9 @@ The project is built phase by phase in strict order. Do not implement future-pha
 | **09** | **`plan/PHASE-09-health-global-skills.md`** | **Health, global memory, skills** | **✅** |
 | **10** | **`plan/PHASE-10-daemon-dreamer-lazy-context.md`** | **Daemon, Dreamer, lazy context** | **🔲** |
 | 11 | `plan/PHASE-11-channels-openclaw-extensions.md` | Channels, OpenClaw, plugins | 🔲 not-started |
+| 12 | `plan/PHASE-12-integration-perf-testing.md` | Integration tests, perf baseline, NFR validation | 🔲 not-started (Fork B) |
+| 13 | `plan/PHASE-13-docs-release-engineering.md` | User docs, packaging, release automation | 🔲 not-started (Fork B) |
+| A1 | `plan/fork-a/PHASE-A1-commitgate-extract.md` | Carve Proposal/Validator/Executor + Event Store as `commitgate` library | 🔲 conditional (Fork A only) |
 
 ### Status Legend
 
