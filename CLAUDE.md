@@ -124,3 +124,52 @@ These are not generic — they exist because past sessions broke them:
 4. Register sub-app in `cli/main.py` via `app.add_typer(...)`.
 5. Tests for the use case → `tests/test_use_cases_<domain>.py`. CLI tests use Typer's `CliRunner`.
 6. If the command needs project state, route through `_shared.py` (and prefer extending `ProjectUseCases` over importing `StateManager` directly — the existing direct import is a pre-existing violation, not a precedent).
+
+## Development Discipline Rules
+
+These are non-negotiable, set by the project owner. Apply to every session.
+
+### Docker-First Validation
+- All tests MUST be runnable inside Docker. Before any phase sign-off, run the full test suite in the container, not just on the host.
+- Keep `Dockerfile.dev` and/or `docker-compose.yml` up to date with every dependency change.
+- "Tests pass on my machine" is not enough. Docker is the reference environment.
+
+### Dependency Freshness
+- No stale dependencies. Default to the latest stable release of every library unless a pinned version is explicitly documented in `pyproject.toml` with a reason comment.
+- Before any release: run `pip list --outdated` and `pip-audit`. Upgrade or document exceptions.
+- New dependency additions require: maintained? popular? license compatible? no server/network requirement? (see L004).
+
+### SRS-Driven Development
+- Every task, feature, and bug fix MUST trace to a requirement in `plan/v4/SRSv4.1.md` (or the current SRS version).
+- `tasks/todo.md` entries MUST include the SRS requirement ID (e.g., `FR-OE-001`) they satisfy. No ID = no task.
+- If a proposed change has no SRS backing: either add the requirement to the SRS (with a version bump) first, or reject the change.
+
+### SRS Document Standards
+- Every SRS document MUST contain a `## Changelog` table immediately after the title/metadata block.
+- Format: `| Version | Date | Author | Summary |`
+- Every version bump requires a new changelog row BEFORE any implementation starts.
+- The prose "About this version" section supplements but does not replace the formal changelog table.
+
+### Task Planning Gate
+- No task enters `tasks/todo.md` without answering four questions in the plan:
+  1. Which SRS requirement does this satisfy?
+  2. Which files will be created or modified?
+  3. How will correctness be verified (test name / smoke test)?
+  4. What could break?
+- Single-line trivial fixes may skip this gate. Multi-file or architectural changes may not.
+
+### Document Hygiene
+- After every phase completion: update and validate `tasks/todo.md`, `tasks/lessons.md`, and `plan/CURRENT_PHASE.md`.
+- No completed items left open. No open items left undocumented.
+- Lessons go into `tasks/lessons.md` BEFORE the code fix, never after.
+
+### Git Hygiene
+- No stale git references. After merging or closing a branch: `git remote prune origin` + `git branch -d <merged>`.
+- Tags must point to signed commits on `main` only.
+- Never `git add -A` blindly. Inspect every untracked file in `git status` and decide: commit, add to `.gitignore`, or delete.
+
+### .gitignore Hygiene
+- When an untracked file should not be committed: add it to `.gitignore` immediately, in the same commit that introduces the pattern.
+- Tool-generated directories (`.omc/`, `.sisyphus/`, `.venv/`, caches) belong in `.gitignore`.
+- `.env` files are NEVER committed. `.env.example` with placeholder values is always provided instead.
+- Generated outputs (logs, build artifacts, coverage reports) get a `.gitignore` entry before the first commit that produces them.

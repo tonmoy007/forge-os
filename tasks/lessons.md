@@ -42,3 +42,10 @@
 - **Trigger:** Multiple iterations needed to fix test isolation (a corollary to L001 with broader scope).
 - **Root cause:** Several modules (`GlobalLessonStore`, `ProjectProfileStore`, `SkillUseCases`) referenced `Path.home() / ".forge"` directly, making them impossible to unit test in isolation.
 - **Rule:** Any module that reads/writes to `~/.forge/` MUST accept the forge directory as a constructor parameter. The `Path.home()` default is acceptable only as a fallback when no explicit path is given. This enables both production use (no arg = ~/.forge) and test isolation (tmp_path injected).
+
+### L006 — The host `.venv` masks dependency drift; Docker with latest deps is the real gate
+- **Date:** 2026-06-08
+- **Trigger:** Full suite was green on the host `.venv` (typer 0.25.1 / click 8.3.3) but 28 CLI tests failed in a fresh Docker `python:3.12-slim` run (`AttributeError: 'CliRunner' object has no attribute 'isolated_filesystem'`).
+- **Root cause:** `pyproject.toml` pins ranges (`typer>=0.12,<1.0`), so the host venv resolved an older Typer while Docker installed Typer 0.26.7, which vendors a click that dropped the long-deprecated `CliRunner.isolated_filesystem`. The test suite depended on a third-party test helper that upstream removed. The stale host venv hid the breakage.
+- **Rule:** Validate the suite in a clean Docker container with freshly-resolved latest deps BEFORE claiming "tests pass" or merging — never trust the host venv alone (it carries old resolved versions). Do not depend on deprecated third-party test helpers; own them. The fix here is `tests/cli_helpers.py::isolated_filesystem` (an owned `tempfile` + `chdir` context manager), not pinning Typer down to dodge the removal.
+- **Files affected:** `tests/cli_helpers.py` (new), `tests/test_cli_phase01.py`, `tests/test_cli_stage_phase02.py`, `tests/test_cli_events_phase03.py`, `tests/test_cli_gates_phase04.py`, `tests/test_adapters_agents_phase05.py`, `tests/test_memory_phase06.py`, `tests/test_context_phase07.py`

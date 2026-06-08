@@ -1,4 +1,4 @@
-"""Phase 05 adapter registry and config selection."""
+"""Phase 05+ adapter registry and config selection."""
 
 from __future__ import annotations
 
@@ -14,6 +14,8 @@ AdapterFactory = Callable[[Path, dict[str, object]], KernelAdapter]
 ADAPTER_PRIORITY: tuple[str, ...] = (
     "dummy",
     "claude_code",
+    "claude_raw",
+    "claude_sdk",
     "codex",
     "openclaw",
     "opencode",
@@ -24,6 +26,8 @@ ADAPTER_PRIORITY: tuple[str, ...] = (
 ADAPTER_CLASS_NAMES: dict[str, str] = {
     "dummy": "DummyAdapter",
     "claude_code": "ClaudeCodeAdapter",
+    "claude_raw": "ClaudeRawAdapter",
+    "claude_sdk": "ClaudeSDKAdapter",
     "codex": "CodexAdapter",
     "openclaw": "OpenClawAdapter",
     "opencode": "OpenCodeAdapter",
@@ -37,14 +41,17 @@ class AdapterRegistryError(RuntimeError):
 
 
 class PlaceholderAdapter(BaseKernelAdapter):
-    """Configured placeholder for future adapters not implemented in Phase 05."""
+    """Configured placeholder for adapters whose optional dep is missing."""
 
     def __init__(self, adapter_id: str) -> None:
         self.adapter_id = adapter_id
 
     def spawn_agent(self, persona, context, tools):  # type: ignore[no-untyped-def]
         class_name = ADAPTER_CLASS_NAMES.get(self.adapter_id, self.adapter_id)
-        raise AdapterRegistryError(f"{class_name} is configured but not implemented in Phase 05.")
+        raise AdapterRegistryError(
+            f"{class_name} is configured but not available. "
+            "Check that the optional dependency is installed."
+        )
 
 
 class AdapterRegistry:
@@ -78,23 +85,119 @@ class AdapterRegistry:
 _REGISTRY = AdapterRegistry()
 
 
+# ---------------------------------------------------------------------------
+# Factory helpers
+# ---------------------------------------------------------------------------
+
 def _dummy_factory(project_root: Path, config: dict[str, object]) -> KernelAdapter:
     create_outputs = bool(config.get("create_outputs", True))
     return DummyAdapter(project_root, create_outputs=create_outputs)
 
 
-_REGISTRY.register("dummy", _dummy_factory)
+def _claude_code_factory(project_root: Path, config: dict[str, object]) -> KernelAdapter:
+    from forge_os.adapters.claude_code.adapter import ClaudeCodeAdapter
+    return ClaudeCodeAdapter(
+        project_root=project_root,
+        model=str(config.get("model", "claude-opus-4-7")),
+    )
 
+
+def _claude_raw_factory(project_root: Path, config: dict[str, object]) -> KernelAdapter:
+    try:
+        from forge_os.adapters.bridge import AsyncToSyncBridge
+        from forge_os.adapters.claude_raw.adapter import ClaudeRawAdapter
+    except ImportError as exc:
+        raise AdapterRegistryError(
+            "claude_raw adapter requires 'anthropic>=0.40'. "
+            "Install it with: pip install 'forge-os[claude-raw]'"
+        ) from exc
+    inner = ClaudeRawAdapter(
+        api_key=str(config.get("api_key", "")) or None,
+        default_model=str(config.get("model", "claude-opus-4-7")),
+    )
+    return AsyncToSyncBridge(inner)
+
+
+def _claude_sdk_factory(project_root: Path, config: dict[str, object]) -> KernelAdapter:
+    try:
+        from forge_os.adapters.bridge import AsyncToSyncBridge
+        from forge_os.adapters.claude_sdk.adapter import ClaudeSDKAdapter
+    except ImportError as exc:
+        raise AdapterRegistryError(
+            "claude_sdk adapter requires 'claude-agent-sdk>=0.1.81'. "
+            "Install it with: pip install 'forge-os[claude-sdk]'"
+        ) from exc
+    inner = ClaudeSDKAdapter(
+        api_key=str(config.get("api_key", "")) or None,
+        default_model=str(config.get("model", "claude-opus-4-7")),
+    )
+    return AsyncToSyncBridge(inner)
+
+
+def _human_factory(project_root: Path, config: dict[str, object]) -> KernelAdapter:
+    from forge_os.adapters.bridge import AsyncToSyncBridge
+    from forge_os.adapters.human.adapter import HumanAdapter
+    inner = HumanAdapter(show_thinking=bool(config.get("show_thinking", True)))
+    return AsyncToSyncBridge(inner)
+
+
+def _codex_factory(project_root: Path, config: dict[str, object]) -> KernelAdapter:
+    import shutil
+    if shutil.which("codex") is None:
+        raise AdapterRegistryError(
+            "codex adapter requires the `codex` binary on PATH. "
+            "Install it with: npm i -g @openai/codex"
+        )
+    from forge_os.adapters.bridge import AsyncToSyncBridge
+    from forge_os.adapters.codex.adapter import CodexAdapter
+    inner = CodexAdapter(
+        default_model=str(config.get("model", "gpt-5.4")),
+        execution_boundary=str(config.get("execution_boundary", "kernel")),
+    )
+    return AsyncToSyncBridge(inner)
+
+
+def _opencode_factory(project_root: Path, config: dict[str, object]) -> KernelAdapter:
+    try:
+        from forge_os.adapters.bridge import AsyncToSyncBridge
+        from forge_os.adapters.opencode.adapter import OpenCodeAdapter
+    except ImportError as exc:
+        raise AdapterRegistryError(
+            "opencode adapter requires 'opencode-ai>=1.14'. "
+            "Install it with: pip install 'forge-os[opencode]'"
+        ) from exc
+    inner = OpenCodeAdapter(
+        server_url=str(config.get("server_url", "http://localhost:4096")),
+        server_password=str(config.get("server_password", "")) or None,
+        auto_spawn_server=bool(config.get("auto_spawn_server", False)),
+    )
+    return AsyncToSyncBridge(inner)
+
+
+# ---------------------------------------------------------------------------
+# Registration
+# ---------------------------------------------------------------------------
+
+_REGISTRY.register("dummy", _dummy_factory)
+_REGISTRY.register("claude_code", _claude_code_factory)
+_REGISTRY.register("claude_raw", _claude_raw_factory)
+_REGISTRY.register("claude_sdk", _claude_sdk_factory)
+_REGISTRY.register("human", _human_factory)
+_REGISTRY.register("codex", _codex_factory)
+_REGISTRY.register("opencode", _opencode_factory)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 def get_adapter_registry() -> AdapterRegistry:
     """Return the process-local adapter registry."""
-
     return _REGISTRY
 
 
 def create_adapter_from_config(project_root: Path, config: ForgeConfig) -> KernelAdapter:
     """Create the selected adapter from `.forge/config.yaml`."""
-
     adapter_id = config.default_adapter
     adapter_config = config.adapters.get(adapter_id, {})
     enabled = adapter_config.get("enabled", adapter_id == "dummy")
@@ -105,12 +208,11 @@ def create_adapter_from_config(project_root: Path, config: ForgeConfig) -> Kerne
 
 def adapter_placeholder_config() -> dict[str, dict[str, object]]:
     """Return default config placeholders in selected priority order."""
-
     return {
-        adapter_id: {
-            "enabled": adapter_id == "dummy",
-            "implementation": ADAPTER_CLASS_NAMES[adapter_id],
-            "phase": "05" if adapter_id == "dummy" else "future",
+        aid: {
+            "enabled": aid == "dummy",
+            "implementation": ADAPTER_CLASS_NAMES[aid],
+            "phase": "05" if aid == "dummy" else "05.5",
         }
-        for adapter_id in ADAPTER_PRIORITY
+        for aid in ADAPTER_PRIORITY
     }

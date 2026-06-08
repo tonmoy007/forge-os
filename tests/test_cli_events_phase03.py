@@ -4,13 +4,14 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from cli_helpers import isolated_filesystem
 from forge_os.cli.main import app
 
 runner = CliRunner()
 
 
 def test_events_list_shows_stage_events() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         init_result = runner.invoke(app, ["init", "--name", "Demo"])
         _ = Path("SRS.md").write_text("# Requirements\n", encoding="utf-8")
         advance_result = runner.invoke(app, ["stage", "advance"])
@@ -24,7 +25,7 @@ def test_events_list_shows_stage_events() -> None:
 
 
 def test_events_tail_limits_output() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         runner.invoke(app, ["init", "--name", "Demo"])
         _ = Path("SRS.md").write_text("# Requirements\n", encoding="utf-8")
         runner.invoke(app, ["stage", "advance"])
@@ -36,7 +37,7 @@ def test_events_tail_limits_output() -> None:
 
 
 def test_events_list_filters_by_type() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         runner.invoke(app, ["init", "--name", "Demo"])
         _ = Path("SRS.md").write_text("# Requirements\n", encoding="utf-8")
         runner.invoke(app, ["stage", "advance"])

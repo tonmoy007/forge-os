@@ -5,6 +5,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from cli_helpers import isolated_filesystem
 from forge_os.agents.executor import run_stage_agent
 from forge_os.cli.main import app
 from forge_os.context.pruner import ContextPruner
@@ -100,7 +101,7 @@ def test_agent_run_registers_stage_outputs_and_context_metadata(tmp_path: Path) 
 
 
 def test_artifact_and_context_cli_commands() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         init_result = runner.invoke(app, ["init", "--name", "Demo"])
         _ = Path("SRS.md").write_text("# Requirements\n", encoding="utf-8")
         register_result = runner.invoke(
@@ -119,7 +120,7 @@ def test_artifact_and_context_cli_commands() -> None:
 
 
 def test_status_displays_stale_artifact_count() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         runner.invoke(app, ["init", "--name", "Demo"])
         _ = Path("SRS.md").write_text("# Requirements\n", encoding="utf-8")
         build_path = Path("pipeline/log/build-agent-output.md")

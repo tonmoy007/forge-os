@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 from typer.testing import CliRunner
 
+from cli_helpers import isolated_filesystem
 from forge_os.adapters.registry import ADAPTER_PRIORITY, adapter_placeholder_config
 from forge_os.agents.executor import AgentExecutionError, run_stage_agent
 from forge_os.agents.loader import load_contracts, load_personas
@@ -20,6 +21,8 @@ def test_adapter_priority_matches_phase05_roadmap() -> None:
     assert ADAPTER_PRIORITY == (
         "dummy",
         "claude_code",
+        "claude_raw",
+        "claude_sdk",
         "codex",
         "openclaw",
         "opencode",
@@ -103,7 +106,7 @@ def test_missing_dummy_outputs_fail_output_contract(tmp_path: Path) -> None:
 
 
 def test_agent_cli_run_enables_stage_advance() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         init_result = runner.invoke(app, ["init", "--name", "Demo"])
         run_result = runner.invoke(app, ["agent", "run"])
         advance_result = runner.invoke(app, ["stage", "advance"])
@@ -116,7 +119,7 @@ def test_agent_cli_run_enables_stage_advance() -> None:
 
 
 def test_adapter_and_agent_cli_list_commands() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         runner.invoke(app, ["init", "--name", "Demo", "--profile", "standard"])
         adapter_result = runner.invoke(app, ["adapter", "list"])
         agent_result = runner.invoke(app, ["agent", "list"])

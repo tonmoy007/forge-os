@@ -5,6 +5,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from cli_helpers import isolated_filesystem
 from forge_os.cli.main import app
 
 runner = CliRunner()
@@ -15,7 +16,7 @@ def _state() -> dict[str, object]:
 
 
 def test_stage_list_shows_initialized_stages() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         init_result = runner.invoke(app, ["init", "--name", "Demo"])
         list_result = runner.invoke(app, ["stage", "list"])
 
@@ -27,7 +28,7 @@ def test_stage_list_shows_initialized_stages() -> None:
 
 
 def test_stage_advance_updates_state() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         runner.invoke(app, ["init", "--name", "Demo"])
         _ = Path("SRS.md").write_text("# Requirements\n", encoding="utf-8")
         result = runner.invoke(app, ["stage", "advance"])
@@ -38,7 +39,7 @@ def test_stage_advance_updates_state() -> None:
 
 
 def test_stage_start_blocks_invalid_transition() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         runner.invoke(app, ["init", "--name", "Demo"])
         result = runner.invoke(app, ["stage", "start", "deploy"])
 
@@ -48,7 +49,7 @@ def test_stage_start_blocks_invalid_transition() -> None:
 
 
 def test_stage_complete_then_start_next_stage() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         runner.invoke(app, ["init", "--name", "Demo"])
         _ = Path("SRS.md").write_text("# Requirements\n", encoding="utf-8")
         complete_result = runner.invoke(app, ["stage", "complete", "srs"])
@@ -60,7 +61,7 @@ def test_stage_complete_then_start_next_stage() -> None:
 
 
 def test_stage_override_requires_reason_option() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         runner.invoke(app, ["init", "--name", "Demo"])
         result = runner.invoke(app, ["stage", "override", "deploy"])
 
@@ -69,7 +70,7 @@ def test_stage_override_requires_reason_option() -> None:
 
 
 def test_stage_override_audits_reason() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         runner.invoke(app, ["init", "--name", "Demo"])
         result = runner.invoke(
             app,

@@ -32,3 +32,19 @@ dist/
 .forge/
 pipeline/state.md
 pipeline/log/
+
+# Tool-generated directories (never commit these)
+.omc/
+.sisyphus/
+
+# Secrets and environment files
+.env
+.env.*
+!.env.example
+
+# Log files
+*.log
+
+# Docker local overrides
+docker-compose.override.yml
+Dockerfile.local
