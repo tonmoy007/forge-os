@@ -5,9 +5,23 @@
 > **Read order:** `/STATUS.md` → `/CLAUDE.md` → this file → the current phase file.
 >
 > **Session Continuity:** If this session is interrupted, run `git log --oneline -5 && git diff HEAD && cat plan/RESUME.md 2>/dev/null || echo "No RESUME.md"` before continuing.
-> Last validated: 230 tests passed, ruff clean, compileall clean.
+> Last validated: 371 tests passed (host `.venv` + clean `python:3.12-slim` Docker, latest deps), ruff clean, compileall clean — 2026-06-08.
 
-## Current Phase
+## Active Work: Phase 05.5 (kernel-first, D5=B)
+
+Per D5=B (open-source kernel-first sequencing), tactical work resumed on the **kernel adapter layer** ahead of Phase 10. Landed (2026-06-08, PRs #1 + #2):
+
+- `kernel/types.py` — canonical adapter contract (EventKind, NormalizedEvent, ToolUseProposal, ToolResult, AgentPersona, KernelCapabilities, IKernelAdapter)
+- 5 new adapters: `human`, `claude_raw`, `claude_sdk`, `codex`, `opencode` (all implementing `IKernelAdapter`, async-generator + proposal-boundary)
+- `adapters/bridge.py` — `AsyncToSyncBridge` (IKernelAdapter → sync `KernelAdapter` Protocol)
+- `adapters/registry.py` — all 6 adapters registered with optional-dep guards
+- `harness/comparison_harness.py` — multi-kernel benchmark harness
+- Full test coverage: every adapter module now has a test file (rule #5). 371 tests total.
+- L006 captured: validate in Docker with latest deps before claiming green.
+
+**Deferred (next slices, per `plan/PHASE-05.5-claude-code-adapter.md`):** ClaudeCodeAdapter Slice 2 (hook capture + event-store integration), Slice 3 (replay), Slice 4 (gate integration + `forge adapter status`), Slice 5 (security enforcer pre-spawn), Slice 6 (`forge init --adapter claude-code`). NOTE: the multi-adapter expansion reused task IDs P055.06-12 that the phase doc originally reserved for ClaudeCodeAdapter Slices 2-6 — re-number remaining ClaudeCodeAdapter work to avoid collision when those slices resume.
+
+## Next Phase (gated)
 
 - Phase: 10
 - File: `plan/PHASE-10-daemon-dreamer-lazy-context.md`
