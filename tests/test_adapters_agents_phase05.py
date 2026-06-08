@@ -20,6 +20,8 @@ def test_adapter_priority_matches_phase05_roadmap() -> None:
     assert ADAPTER_PRIORITY == (
         "dummy",
         "claude_code",
+        "claude_raw",
+        "claude_sdk",
         "codex",
         "openclaw",
         "opencode",

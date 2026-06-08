@@ -6,6 +6,16 @@
 
 ---
 
+## Changelog
+
+| Version | Date | Author | Summary |
+|---------|------|--------|---------|
+| 4.1 | 2026-05-10 | tonmoy | Three-pass hardening: truth-in-claims, reconciliation, scope-and-schedule. Added FR-KEY, FR-EVO, FR-DDB, FR-COST groups. Split into MVP / Production / Enterprise tiers. All v4.0 corrections annotated with `[v4.1: …]`. |
+| 4.0 | — | tonmoy | Added FR-IR (Engineering IR), FR-NEG (policy/governance) requirement groups. Introduced event-sourced core, shadow evaluation, cognitive observability, multi-model router, supply-chain security. |
+| 3.1 | — | tonmoy | Original SRS. FR-OE-001 through FR-TE-003. 12-stage pipeline, 16 agents, multi-modal gates, three-tier memory, ADG/LKG. |
+
+---
+
 ## About this version
 
 v4.1 supersedes v3.1 and v4.0. It applies a three-pass hardening to v4.0:
