@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 from typer.testing import CliRunner
 
+from cli_helpers import isolated_filesystem
 from forge_os.agents.executor import run_stage_agent
 from forge_os.cli.main import app
 from forge_os.memory.lessons import LessonStore
@@ -95,7 +96,7 @@ def test_only_approved_high_confidence_lessons_enter_agent_context(tmp_path: Pat
 
 
 def test_lesson_cli_lifecycle() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         init_result = runner.invoke(app, ["init", "--name", "Demo"])
         add_result = runner.invoke(
             app,
@@ -130,7 +131,7 @@ def test_lesson_cli_lifecycle() -> None:
 
 
 def test_reflection_cli_lists_stage_completion_reflections() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         init_result = runner.invoke(app, ["init", "--name", "Demo"])
         _ = Path("SRS.md").write_text("# Requirements\n", encoding="utf-8")
         complete_result = runner.invoke(app, ["stage", "complete", "srs"])
@@ -150,7 +151,7 @@ def test_reflection_cli_lists_stage_completion_reflections() -> None:
 
 
 def test_agent_run_log_records_injected_lessons() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         runner.invoke(app, ["init", "--name", "Demo"])
         add_result = runner.invoke(
             app,

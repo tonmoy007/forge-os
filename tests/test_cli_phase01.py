@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 from typer.testing import CliRunner
 
+from cli_helpers import isolated_filesystem
 from forge_os.cli.main import app
 
 runner = CliRunner()
@@ -37,7 +38,7 @@ def test_cli_help_runs() -> None:
 
 
 def test_init_creates_expected_project_files() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         root = Path.cwd()
         result = runner.invoke(app, ["init", "--name", "Demo", "--profile", "minimal"])
 
@@ -60,7 +61,7 @@ def test_init_creates_expected_project_files() -> None:
 
 
 def test_init_refuses_overwrite_without_force() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         first = runner.invoke(app, ["init", "--name", "Demo"])
         second = runner.invoke(app, ["init", "--name", "Demo"])
 
@@ -70,7 +71,7 @@ def test_init_refuses_overwrite_without_force() -> None:
 
 
 def test_status_reads_initialized_project() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         init_result = runner.invoke(app, ["init", "--name", "Demo", "--profile", "standard"])
         status_result = runner.invoke(app, ["status"])
 
@@ -83,7 +84,7 @@ def test_status_reads_initialized_project() -> None:
 
 
 def test_status_handles_uninitialized_directory() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         result = runner.invoke(app, ["status"])
 
         assert result.exit_code == 1
@@ -91,7 +92,7 @@ def test_status_handles_uninitialized_directory() -> None:
 
 
 def test_config_validate_accepts_generated_config() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         runner.invoke(app, ["init", "--name", "Demo"])
         result = runner.invoke(app, ["config", "validate"])
 
@@ -100,7 +101,7 @@ def test_config_validate_accepts_generated_config() -> None:
 
 
 def test_config_validate_rejects_malformed_config_file() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         config_path = Path("bad-config.yaml")
         _ = config_path.write_text("schema_version: ''\nprofile: invalid\n", encoding="utf-8")
 
@@ -110,7 +111,7 @@ def test_config_validate_rejects_malformed_config_file() -> None:
 
 
 def test_config_show_outputs_validated_config() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         runner.invoke(app, ["init", "--name", "Demo"])
         result = runner.invoke(app, ["config", "show"])
 

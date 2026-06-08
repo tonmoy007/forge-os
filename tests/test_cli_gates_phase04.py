@@ -4,13 +4,14 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from cli_helpers import isolated_filesystem
 from forge_os.cli.main import app
 
 runner = CliRunner()
 
 
 def test_gate_list_shows_default_gate() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         runner.invoke(app, ["init", "--name", "Demo"])
         result = runner.invoke(app, ["gate", "list"])
 
@@ -20,7 +21,7 @@ def test_gate_list_shows_default_gate() -> None:
 
 
 def test_gate_check_blocks_missing_required_file() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         runner.invoke(app, ["init", "--name", "Demo"])
         result = runner.invoke(app, ["gate", "check", "srs"])
 
@@ -29,7 +30,7 @@ def test_gate_check_blocks_missing_required_file() -> None:
 
 
 def test_gate_check_passes_when_required_file_exists() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         runner.invoke(app, ["init", "--name", "Demo"])
         _ = Path("SRS.md").write_text("# Requirements\n", encoding="utf-8")
         result = runner.invoke(app, ["gate", "check", "srs"])
@@ -39,7 +40,7 @@ def test_gate_check_passes_when_required_file_exists() -> None:
 
 
 def test_gate_report_explains_fix() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         runner.invoke(app, ["init", "--name", "Demo"])
         result = runner.invoke(app, ["gate", "report", "--stage", "srs"])
 
@@ -49,7 +50,7 @@ def test_gate_report_explains_fix() -> None:
 
 
 def test_stage_advance_is_blocked_by_missing_required_file() -> None:
-    with runner.isolated_filesystem():
+    with isolated_filesystem():
         runner.invoke(app, ["init", "--name", "Demo"])
         result = runner.invoke(app, ["stage", "advance"])
 
