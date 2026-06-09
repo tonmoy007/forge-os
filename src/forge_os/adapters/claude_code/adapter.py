@@ -116,6 +116,23 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
         self._record_spawn_completed(run_id, handle, result)
         return handle
 
+    def replay_session(self, run_id: str) -> AgentHandle:
+        """Reconstruct a past spawn's AgentHandle from the event store (FR-ES-003).
+
+        Re-projects the recorded event stream for ``run_id`` without invoking the
+        subprocess — the same run_id yields the same handle every time (ADR-005).
+        Raises ReplayError if no event store is configured, or the run is
+        missing, incomplete, or failed.
+        """
+        # Lazy import: replay imports projection helpers from this module, so a
+        # top-level import here would create a cycle.
+        from forge_os.adapters.claude_code.replay import ReplayError
+        from forge_os.adapters.claude_code.replay import replay_session as _replay
+
+        if self._event_store is None:
+            raise ReplayError("no event store configured for replay")
+        return _replay(self._event_store, run_id)
+
     def _build_prompt(self, persona: AgentDefinition, context: str) -> str:
         parts = [f"Role: {persona.role}", f"\n{persona.prompt}"]
         if context:
@@ -139,21 +156,14 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
         result: RunResult,
         run_id: str,
     ) -> AgentHandle:
-        outputs = self._extract_outputs(result)
         return AgentHandle(
             provider=self.adapter_id,
             persona_id=persona.id,
             stage_id=persona.stage_ids[0] if persona.stage_ids else None,
             status="completed",
-            outputs=outputs,
+            outputs=extract_text_outputs(result),
             metadata=self._build_metadata(persona, granted_tools, result, run_id),
         )
-
-    def _extract_outputs(self, result: RunResult) -> list[OutputArtifact]:
-        text = result.text_output
-        if not text:
-            return []
-        return [OutputArtifact(path="", kind="text", description=text[:500])]
 
     def _build_metadata(
         self,
@@ -237,6 +247,7 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
             EVENT_SPAWN_COMPLETED,
             {
                 "adapter": self.adapter_id,
+                "handle_id": handle.handle_id,
                 "status": handle.status,
                 "returncode": result.returncode,
                 "tool_use_count": len(result.tool_uses),
@@ -255,6 +266,18 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
                 "error": str(exc),
             },
         )
+
+
+def extract_text_outputs(result: RunResult) -> list[OutputArtifact]:
+    """Project a run's text transcript into output artifacts.
+
+    Shared by live spawn (`_build_handle`) and replay so both derive outputs
+    identically from a RunResult.
+    """
+    text = result.text_output
+    if not text:
+        return []
+    return [OutputArtifact(path="", kind="text", description=text[:500])]
 
 
 def _new_run_id() -> str:
