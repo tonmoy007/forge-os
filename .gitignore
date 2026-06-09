@@ -48,3 +48,7 @@ pipeline/log/
 # Docker local overrides
 docker-compose.override.yml
 Dockerfile.local
+
+# Claude Code: project rules (.claude/rules/) are committed; local state is not
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
