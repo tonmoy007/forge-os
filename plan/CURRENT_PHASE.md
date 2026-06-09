@@ -19,7 +19,11 @@ Per D5=B (open-source kernel-first sequencing), tactical work resumed on the **k
 - Full test coverage: every adapter module now has a test file (rule #5). 371 tests total.
 - L006 captured: validate in Docker with latest deps before claiming green.
 
-**Deferred (next slices, per `plan/PHASE-05.5-claude-code-adapter.md`):** ClaudeCodeAdapter Slice 2 (hook capture + event-store integration), Slice 3 (replay), Slice 4 (gate integration + `forge adapter status`), Slice 5 (security enforcer pre-spawn), Slice 6 (`forge init --adapter claude-code`). NOTE: the multi-adapter expansion reused task IDs P055.06-12 that the phase doc originally reserved for ClaudeCodeAdapter Slices 2-6 — re-number remaining ClaudeCodeAdapter work to avoid collision when those slices resume.
+**ClaudeCodeAdapter Slice 2 — landed 2026-06-09 (P055.06-08):** hook lifecycle (`adapters/claude_code/hooks.py::ClaudeSettingsHookWriter`) + event-store recording (`AdapterSpawnStarted` → N×`AdapterStreamEvent` → `AdapterSpawnCompleted`/`AdapterSpawnFailed` under a per-spawn `run_id`; `run_id` exposed on `AgentHandle.metadata`). 395 tests (host + clean `python:3.12-slim` Docker, latest deps), ruff clean, compileall clean.
+
+**Task-ID collision resolved:** the multi-adapter expansion commit (`deb4bec`) was loosely labelled "P055.06-12"; that label is informal. The phase-doc deliverables table is the single source of truth — P055.06-08 are Slice 2 (just landed), P055.09-15 remain ClaudeCodeAdapter Slices 3-6.
+
+**Deferred (next slices, per `plan/PHASE-05.5-claude-code-adapter.md`):** Slice 3 (replay — `replay_session(run_id)` from the recorded event stream, P055.09-10), Slice 4 (gate integration + `forge adapter status`, P055.11-12), Slice 5 (security enforcer pre-spawn, P055.13-14), Slice 6 (`forge init --adapter claude-code`, P055.15).
 
 ## Next Phase (gated)
 

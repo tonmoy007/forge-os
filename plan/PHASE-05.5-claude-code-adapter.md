@@ -106,18 +106,46 @@ Token counts appear only in `--output-format json` final output, not in stream-j
 
 ## Slice 2 — Hook Capture + Event Store
 
+**Status:** Complete (2026-06-09). Tests: `tests/test_adapters_claude_code_hooks.py` + extended
+`tests/test_adapters_claude_code.py`. Full suite 395 passing (host + clean `python:3.12-slim` Docker,
+latest deps), ruff clean, compileall clean.
+
 Hooks in `.claude/settings.json`:
 ```json
 {
   "hooks": {
-    "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "forge hook pre-tool"}]}],
-    "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "forge hook post-tool"}]}]
+    "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "<caller-supplied>"}]}],
+    "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "<caller-supplied>"}]}]
   }
 }
 ```
 
-The adapter writes a hook config before spawn and tears it down after.  
-Every stream-json event is appended to the event store as type `ADAPTER_STREAM`.
+`ClaudeSettingsHookWriter` (`adapters/claude_code/hooks.py`) installs a hook config before spawn and
+tears it down after (even on failure), restoring the project's prior `.claude/settings.json` byte-for-byte
+(or removing a file/dir it created). The hook **command is caller-injected** — the adapter does not
+hardcode a `forge hook` subcommand, because that CLI does not exist yet; wiring it follows when it does.
+The adapter enables hooks only when constructed with `hook_command=...`.
+
+Every stream-json line is appended to the event store under a per-spawn `run_id` stream. The recorded
+event types (PascalCase, matching the EventStore convention; defined as constants in `adapter.py`):
+
+| Event type | When | Payload |
+|---|---|---|
+| `AdapterSpawnStarted` | before subprocess | persona_id, role, stage_id, prompt, context, granted_tools, claude_tools, max_turns |
+| `AdapterStreamEvent` | per stream-json line | `{type, raw}` (the full parsed line) |
+| `AdapterSpawnCompleted` | on success | status, returncode, tool_use_count, text_length, metadata |
+| `AdapterSpawnFailed` | on `ClaudeCodeSpawnError` | returncode, error |
+
+`run_id` is exposed on `AgentHandle.metadata["run_id"]` so Slice 3 replay can reconstruct the handle.
+
+**Determinism implementation note (batch vs. streaming).** The runner keeps `subprocess.run` (batch) and
+invokes the `on_event` callback per parsed line *after* the subprocess returns, rather than streaming each
+line byte-by-byte during execution. The ADR-005 / FR-ES-001 requirement — *the full stream-json transcript
+is captured to the immutable event store, and replay reconstructs the handle without re-invoking the kernel*
+— is fully met either way: for a completed run the recorded event set is identical. True byte-by-byte
+streaming would add a stderr-drain thread plus a SQLite cross-thread hazard for negligible benefit on a
+one-shot `claude -p` call; the only difference is partial-capture on mid-run crash, and a crash already
+records `AdapterSpawnFailed` with stderr. This is a deliberate, documented tradeoff — not a shortcut.
 
 ---
 

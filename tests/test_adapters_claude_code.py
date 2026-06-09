@@ -10,14 +10,30 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from forge_os.adapters.base import AgentHandle, KernelAdapter
-from forge_os.adapters.claude_code import ClaudeCodeAdapter, ClaudeCodeSpawnError
-from forge_os.adapters.claude_code.runner import RunResult, StreamEvent, _parse_stream_lines
+from forge_os.adapters.claude_code import (
+    ClaudeCodeAdapter,
+    ClaudeCodeSpawnError,
+    ClaudeSettingsError,
+)
+from forge_os.adapters.claude_code.adapter import (
+    EVENT_SPAWN_COMPLETED,
+    EVENT_SPAWN_FAILED,
+    EVENT_SPAWN_STARTED,
+    EVENT_STREAM,
+)
+from forge_os.adapters.claude_code.runner import (
+    RunResult,
+    StreamEvent,
+    _parse_stream_lines,
+    run_claude,
+)
 from forge_os.adapters.claude_code.tool_map import (
     DEFAULT_ABSTRACT_TOOLS,
     to_abstract_tools,
     to_claude_tools,
 )
 from forge_os.agents.models import AgentDefinition
+from forge_os.events.store import EventStore
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -66,6 +82,16 @@ def _make_proc(stdout: str = "", stderr: str = "", returncode: int = 0) -> Magic
     return proc
 
 
+class _BoomStore(EventStore):
+    """EventStore whose every append raises — exercises best-effort recording."""
+
+    def __init__(self) -> None:
+        super().__init__(Path("/nonexistent/events.db"))
+
+    def append(self, *args: object, **kwargs: object) -> int:
+        raise RuntimeError("store down")
+
+
 # ── Tool map tests ────────────────────────────────────────────────────────────
 
 class TestToolMap:
@@ -111,6 +137,10 @@ class TestStreamParser:
         ])
         events = list(_parse_stream_lines(raw))
         assert len(events) == 2
+
+    def test_empty_input_yields_no_events(self) -> None:
+        assert list(_parse_stream_lines("")) == []
+        assert list(_parse_stream_lines("   \n\n  ")) == []
 
     def test_skips_malformed_json(self) -> None:
         raw = "\n".join([
@@ -281,3 +311,286 @@ class TestSpawnAgent:
         with patch("subprocess.run", return_value=error_proc):
             with pytest.raises(ClaudeCodeSpawnError):
                 adapter.spawn_agent(persona, "context", ["read_file"])
+
+    def test_handle_metadata_has_run_id(
+        self, adapter: ClaudeCodeAdapter, persona: AgentDefinition
+    ) -> None:
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)):
+            handle = adapter.spawn_agent(persona, "context", ["read_file"])
+        assert handle.metadata["run_id"].startswith("ccrun-")
+
+
+# ── Slice 2: runner on_event callback ────────────────────────────────────────
+
+
+class TestRunnerOnEvent:
+    def test_on_event_called_for_every_stream_line(self) -> None:
+        seen: list[StreamEvent] = []
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)):
+            run_claude("p", allowed_tools=["Read"], cwd=Path("."), on_event=seen.append)
+        # FIXTURE has 5 lines: text, tool_use, tool_result, text, message
+        assert [e.type for e in seen] == ["text", "tool_use", "tool_result", "text", "message"]
+
+    def test_on_event_fires_before_failure(self) -> None:
+        seen: list[StreamEvent] = []
+        error_proc = _make_proc(FIXTURE_STREAM_JSON_ERROR, returncode=0)
+        with patch("subprocess.run", return_value=error_proc):
+            with pytest.raises(ClaudeCodeSpawnError):
+                run_claude("p", allowed_tools=["Read"], cwd=Path("."), on_event=seen.append)
+        # both lines were recorded before run_claude raised
+        assert [e.type for e in seen] == ["text", "error"]
+
+    def test_on_event_optional(self) -> None:
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)):
+            result = run_claude("p", allowed_tools=["Read"], cwd=Path("."))
+        assert len(result.events) == 5
+
+
+# ── Slice 2: event-store recording ───────────────────────────────────────────
+
+
+class TestEventStoreRecording:
+    @pytest.fixture
+    def event_store(self, tmp_path: Path) -> EventStore:
+        return EventStore(tmp_path / "events.db")
+
+    @pytest.fixture
+    def recording_adapter(
+        self, project_root: Path, event_store: EventStore
+    ) -> ClaudeCodeAdapter:
+        return ClaudeCodeAdapter(project_root, event_store=event_store, max_turns=5, timeout=30)
+
+    def test_records_started_streams_completed_in_order(
+        self,
+        recording_adapter: ClaudeCodeAdapter,
+        persona: AgentDefinition,
+        event_store: EventStore,
+    ) -> None:
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)):
+            handle = recording_adapter.spawn_agent(persona, "ctx", ["read_file", "write_file"])
+
+        run_id = handle.metadata["run_id"]
+        types = [e["event_type"] for e in event_store.read_stream(run_id)]
+        assert len(types) == 7  # started + 5 stream lines + completed
+        assert types[0] == EVENT_SPAWN_STARTED
+        assert types[-1] == EVENT_SPAWN_COMPLETED
+        assert types.count(EVENT_STREAM) == 5  # one per stream-json line
+
+    def test_started_payload_captures_persona_and_tools(
+        self,
+        recording_adapter: ClaudeCodeAdapter,
+        persona: AgentDefinition,
+        event_store: EventStore,
+    ) -> None:
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)):
+            handle = recording_adapter.spawn_agent(persona, "ctx", ["read_file"])
+
+        run_id = handle.metadata["run_id"]
+        started = next(
+            json.loads(e["payload"])
+            for e in event_store.read_stream(run_id)
+            if e["event_type"] == EVENT_SPAWN_STARTED
+        )
+        assert started["persona_id"] == "srs-agent"
+        assert started["stage_id"] == "srs"
+        assert started["granted_tools"] == ["read_file"]
+        assert started["claude_tools"] == ["Read"]
+        assert started["context"] == "ctx"
+        assert "Software architect" in started["prompt"]
+
+    def test_stream_payload_preserves_raw_line(
+        self,
+        recording_adapter: ClaudeCodeAdapter,
+        persona: AgentDefinition,
+        event_store: EventStore,
+    ) -> None:
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)):
+            handle = recording_adapter.spawn_agent(persona, "ctx", ["read_file"])
+
+        run_id = handle.metadata["run_id"]
+        streams = [
+            json.loads(e["payload"])
+            for e in event_store.read_stream(run_id)
+            if e["event_type"] == EVENT_STREAM
+        ]
+        tool_use = next(s for s in streams if s["type"] == "tool_use")
+        assert tool_use["raw"]["name"] == "Read"
+        assert tool_use["raw"]["input"] == {"file_path": "SRS.md"}
+
+    def test_completed_payload(
+        self,
+        recording_adapter: ClaudeCodeAdapter,
+        persona: AgentDefinition,
+        event_store: EventStore,
+    ) -> None:
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)):
+            handle = recording_adapter.spawn_agent(persona, "ctx", ["read_file"])
+
+        run_id = handle.metadata["run_id"]
+        completed = next(
+            json.loads(e["payload"])
+            for e in event_store.read_stream(run_id)
+            if e["event_type"] == EVENT_SPAWN_COMPLETED
+        )
+        assert completed["status"] == "completed"
+        assert completed["returncode"] == 0
+        assert completed["tool_use_count"] == 1
+
+    def test_failed_run_records_started_and_failed_no_completed(
+        self,
+        recording_adapter: ClaudeCodeAdapter,
+        persona: AgentDefinition,
+        event_store: EventStore,
+    ) -> None:
+        with patch("subprocess.run", return_value=_make_proc("", "Boom", 1)):
+            with pytest.raises(ClaudeCodeSpawnError):
+                recording_adapter.spawn_agent(persona, "ctx", ["read_file"])
+
+        assert len(event_store.read_by_type(EVENT_SPAWN_STARTED)) == 1
+        failed = event_store.read_by_type(EVENT_SPAWN_FAILED)
+        assert len(failed) == 1
+        payload = json.loads(failed[0]["payload"])
+        assert payload["returncode"] == 1
+        assert "Boom" in payload["error"]
+        assert event_store.read_by_type(EVENT_SPAWN_COMPLETED) == []
+
+    def test_failed_run_still_records_stream_lines(
+        self,
+        recording_adapter: ClaudeCodeAdapter,
+        persona: AgentDefinition,
+        event_store: EventStore,
+    ) -> None:
+        # returncode 0 but stream contains an error line → ClaudeCodeSpawnError
+        error_proc = _make_proc(FIXTURE_STREAM_JSON_ERROR, returncode=0)
+        with patch("subprocess.run", return_value=error_proc):
+            with pytest.raises(ClaudeCodeSpawnError):
+                recording_adapter.spawn_agent(persona, "ctx", ["read_file"])
+
+        streams = [json.loads(e["payload"]) for e in event_store.read_by_type(EVENT_STREAM)]
+        assert [s["type"] for s in streams] == ["text", "error"]
+        error_line = next(s for s in streams if s["type"] == "error")
+        assert error_line["raw"]["error"]["message"] == "rate limited"
+        assert len(event_store.read_by_type(EVENT_SPAWN_FAILED)) == 1
+
+    def test_no_event_store_means_no_recording(
+        self, project_root: Path, persona: AgentDefinition
+    ) -> None:
+        adapter = ClaudeCodeAdapter(project_root)  # no event_store injected
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)):
+            handle = adapter.spawn_agent(persona, "ctx", ["read_file"])
+        assert handle.metadata["run_id"].startswith("ccrun-")  # run_id still assigned
+
+    def test_no_event_store_failure_still_raises(
+        self, project_root: Path, persona: AgentDefinition
+    ) -> None:
+        adapter = ClaudeCodeAdapter(project_root)  # no event_store injected
+        with patch("subprocess.run", return_value=_make_proc("", "Boom", 1)):
+            with pytest.raises(ClaudeCodeSpawnError):
+                adapter.spawn_agent(persona, "ctx", ["read_file"])
+
+    def test_empty_stream_records_started_and_completed_only(
+        self,
+        recording_adapter: ClaudeCodeAdapter,
+        persona: AgentDefinition,
+        event_store: EventStore,
+    ) -> None:
+        with patch("subprocess.run", return_value=_make_proc("")):
+            handle = recording_adapter.spawn_agent(persona, "ctx", ["read_file"])
+
+        run_id = handle.metadata["run_id"]
+        types = [e["event_type"] for e in event_store.read_stream(run_id)]
+        assert types == [EVENT_SPAWN_STARTED, EVENT_SPAWN_COMPLETED]  # zero stream events
+
+    def test_sequential_spawns_get_distinct_run_ids(
+        self,
+        recording_adapter: ClaudeCodeAdapter,
+        persona: AgentDefinition,
+        event_store: EventStore,
+    ) -> None:
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)):
+            run1 = recording_adapter.spawn_agent(persona, "ctx", ["read_file"]).metadata["run_id"]
+            run2 = recording_adapter.spawn_agent(persona, "ctx", ["read_file"]).metadata["run_id"]
+
+        assert run1 != run2
+        assert event_store.read_stream(run1)[0]["event_type"] == EVENT_SPAWN_STARTED
+        assert len(event_store.read_by_type(EVENT_SPAWN_STARTED)) == 2
+
+    def test_event_store_failure_does_not_abort_successful_spawn(
+        self, project_root: Path, persona: AgentDefinition
+    ) -> None:
+        adapter = ClaudeCodeAdapter(project_root, event_store=_BoomStore())
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)):
+            handle = adapter.spawn_agent(persona, "ctx", ["read_file"])
+        # recording failed silently (best-effort) but the spawn still completed
+        assert handle.status == "completed"
+        assert handle.metadata["run_id"].startswith("ccrun-")
+
+    def test_event_store_failure_does_not_mask_spawn_error(
+        self, project_root: Path, persona: AgentDefinition
+    ) -> None:
+        adapter = ClaudeCodeAdapter(project_root, event_store=_BoomStore())
+        with patch("subprocess.run", return_value=_make_proc("", "Boom", 1)):
+            # the original ClaudeCodeSpawnError must surface, not the store error
+            with pytest.raises(ClaudeCodeSpawnError):
+                adapter.spawn_agent(persona, "ctx", ["read_file"])
+
+
+# ── Slice 2: hook lifecycle ──────────────────────────────────────────────────
+
+
+class TestAdapterHookLifecycle:
+    def test_hooks_present_during_spawn_and_torn_down_after(
+        self, project_root: Path, persona: AgentDefinition
+    ) -> None:
+        adapter = ClaudeCodeAdapter(project_root, hook_command="forge hook tool")
+        observed: dict[str, bool] = {}
+
+        def fake_run(cmd: list[str], **kwargs: object) -> MagicMock:
+            settings = project_root / ".claude" / "settings.json"
+            observed["existed_during_run"] = settings.exists()
+            return _make_proc(FIXTURE_STREAM_JSON)
+
+        with patch("subprocess.run", side_effect=fake_run):
+            adapter.spawn_agent(persona, "ctx", ["read_file"])
+
+        assert observed["existed_during_run"] is True
+        assert not (project_root / ".claude").exists()  # torn down
+
+    def test_hooks_torn_down_even_when_spawn_fails(
+        self, project_root: Path, persona: AgentDefinition
+    ) -> None:
+        adapter = ClaudeCodeAdapter(project_root, hook_command="forge hook tool")
+        with patch("subprocess.run", return_value=_make_proc("", "fail", 1)):
+            with pytest.raises(ClaudeCodeSpawnError):
+                adapter.spawn_agent(persona, "ctx", ["read_file"])
+        assert not (project_root / ".claude").exists()
+
+    def test_no_hook_command_creates_no_claude_dir(
+        self, project_root: Path, persona: AgentDefinition
+    ) -> None:
+        adapter = ClaudeCodeAdapter(project_root)
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)):
+            adapter.spawn_agent(persona, "ctx", ["read_file"])
+        assert not (project_root / ".claude").exists()
+
+    def test_hook_install_failure_records_terminal_failed_event(
+        self, project_root: Path, persona: AgentDefinition
+    ) -> None:
+        # A malformed pre-existing settings.json makes hook install raise; the
+        # spawn must surface that error AND record a terminal Failed event
+        # (never an orphaned Started with no terminal).
+        claude_dir = project_root / ".claude"
+        claude_dir.mkdir()
+        (claude_dir / "settings.json").write_text("{not json", encoding="utf-8")
+        store = EventStore(project_root / "events.db")
+        adapter = ClaudeCodeAdapter(
+            project_root, event_store=store, hook_command="forge hook tool"
+        )
+
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)):
+            with pytest.raises(ClaudeSettingsError):
+                adapter.spawn_agent(persona, "ctx", ["read_file"])
+
+        assert len(store.read_by_type(EVENT_SPAWN_STARTED)) == 1
+        assert len(store.read_by_type(EVENT_SPAWN_FAILED)) == 1
+        assert store.read_by_type(EVENT_SPAWN_COMPLETED) == []

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -91,8 +91,16 @@ def run_claude(
     max_turns: int = 10,
     timeout: int = 120,
     claude_bin: str = "claude",
+    on_event: Callable[[StreamEvent], None] | None = None,
 ) -> RunResult:
     """Invoke the claude CLI and return a parsed RunResult.
+
+    Each parsed stream-json line is passed to ``on_event`` (if given) in order,
+    so callers can record the transcript to an event store. ``on_event`` fires
+    for every line — including those of a run that ultimately fails — before
+    this function raises. ``on_event`` must not raise: an exception from it
+    propagates and interrupts parsing, so a recording callback should absorb its
+    own infrastructure failures (the adapter's recorder does).
 
     Raises ClaudeCodeSpawnError if the subprocess exits non-zero.
     """
@@ -119,7 +127,11 @@ def run_claude(
     except FileNotFoundError as exc:
         raise ClaudeCodeSpawnError(-1, f"claude binary not found: {claude_bin}") from exc
 
-    events = list(_parse_stream_lines(proc.stdout))
+    events: list[StreamEvent] = []
+    for event in _parse_stream_lines(proc.stdout):
+        events.append(event)
+        if on_event is not None:
+            on_event(event)
     result = RunResult(returncode=proc.returncode, events=events, stderr=proc.stderr)
 
     if not result.succeeded:
