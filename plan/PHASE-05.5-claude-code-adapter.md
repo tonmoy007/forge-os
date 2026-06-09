@@ -33,34 +33,44 @@ LLM calls are non-deterministic. The adapter's job is to **bound non-determinism
 
 This means `ClaudeCodeAdapter` is a thin adapter over a `ClaudeCodeRunner` that streams and records.
 
-### CLI Surface
+### CLI Surface (verified against claude 2.1.x — Slice 1.5)
 
 ```
 claude -p <prompt> \
   --output-format stream-json \
+  --verbose \
   --no-session-persistence \
-  --allowedTools <tool1,tool2,...> \
-  --max-turns <n>
+  --allowedTools <tool1,tool2,...>
 ```
 
 - `-p`: non-interactive, one-shot prompt
 - `--output-format stream-json`: one JSON object per line on stdout
+- **`--verbose`: REQUIRED** alongside `-p` + stream-json (the CLI errors without it)
 - `--no-session-persistence`: stateless, no cross-run context leakage
-- `--allowedTools`: enforce ALLOW policy (deny everything not listed)
-- `--max-turns`: safety cap on recursive agent loops
+- `--allowedTools`: enforce ALLOW policy (comma- *or* space-separated tool names)
+- ~~`--max-turns`~~: **not a valid CLI flag in 2.1.x** — removed (the `-p` one-shot is naturally bounded)
 
-### Stream-JSON Schema
+### Stream-JSON Schema (verified — corrected in Slice 1.5)
 
-Each line is one of:
+> ⚠️ The original draft of this section guessed a `{"type":"text","content":...}` schema that does
+> **not** match the real CLI. A captured gold sample lives at `tests/fixtures/claude_code/real_text_run.jsonl`.
+
+Each line is an envelope:
 ```
-{"type": "text",        "content": "..."}
-{"type": "tool_use",    "id": "...", "name": "Read", "input": {...}}
-{"type": "tool_result", "tool_use_id": "...", "content": "..."}
-{"type": "message",     "role": "assistant", "content": [...]}
-{"type": "error",       "error": {"type": "...", "message": "..."}}
+{"type": "system",    "subtype": "init", ...}                       session metadata
+{"type": "assistant", "message": {"role":"assistant", "content": [   one assistant turn
+    {"type": "text", "text": "..."},
+    {"type": "tool_use", "id": "...", "name": "Read", "input": {...}}]}}
+{"type": "user",      "message": {"content": [                        tool results fed back
+    {"type": "tool_result", "tool_use_id": "...", "content": "..."}]}}
+{"type": "result",    "subtype": "success"|"error_*", "is_error": false,
+    "result": "<final text>", "usage": {...}, "total_cost_usd": 0.0}
 ```
 
-Token counts appear only in `--output-format json` final output, not in stream-json lines.
+Text is at `message.content[].text` (NOT a top-level `content`). The final answer is the `result`
+line's `result` field. **Token usage and cost ARE present** in the `result` line's `usage` /
+`total_cost_usd` (the old note claiming tokens needed `--output-format json` was wrong). Other line
+types (`rate_limit_event`, `system` hook subtypes) are recorded verbatim but carry no adapter payload.
 
 ---
 

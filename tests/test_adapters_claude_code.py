@@ -36,18 +36,58 @@ from forge_os.agents.models import AgentDefinition
 from forge_os.events.store import EventStore
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
+#
+# Real claude `--output-format stream-json` envelopes (verified against 2.1.x):
+# system/init, assistant (text + tool_use blocks), user (tool_result), result.
+
+
+def _init() -> str:
+    return json.dumps(
+        {"type": "system", "subtype": "init", "session_id": "s1", "model": "claude-opus-4-8"}
+    )
+
+
+def _assistant(*blocks: dict) -> str:
+    return json.dumps(
+        {"type": "assistant", "session_id": "s1",
+         "message": {"role": "assistant", "content": list(blocks)}}
+    )
+
+
+def _text(text: str) -> dict:
+    return {"type": "text", "text": text}
+
+
+def _tool_use(tool_id: str, name: str, **inp: object) -> dict:
+    return {"type": "tool_use", "id": tool_id, "name": name, "input": inp}
+
+
+def _user_tool_result(tool_id: str, content: str) -> str:
+    block = {"type": "tool_result", "tool_use_id": tool_id, "content": content}
+    return json.dumps(
+        {"type": "user", "session_id": "s1", "message": {"role": "user", "content": [block]}}
+    )
+
+
+def _result(text: str, *, is_error: bool = False, subtype: str = "success") -> str:
+    return json.dumps(
+        {"type": "result", "subtype": subtype, "is_error": is_error, "session_id": "s1",
+         "result": text, "num_turns": 2,
+         "usage": {"input_tokens": 100, "output_tokens": 20}, "total_cost_usd": 0.01}
+    )
+
 
 FIXTURE_STREAM_JSON = "\n".join([
-    json.dumps({"type": "text", "content": "Analyzing the codebase..."}),
-    json.dumps({"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "SRS.md"}}),
-    json.dumps({"type": "tool_result", "tool_use_id": "t1", "content": "# SRS content"}),
-    json.dumps({"type": "text", "content": "Done. Produced SRS.md."}),
-    json.dumps({"type": "message", "role": "assistant", "content": []}),
+    _init(),
+    _assistant(_text("Analyzing the codebase..."), _tool_use("t1", "Read", file_path="SRS.md")),
+    _user_tool_result("t1", "# SRS content"),
+    _assistant(_text("Done. Produced SRS.md.")),
+    _result("Done. Produced SRS.md."),
 ])
 
 FIXTURE_STREAM_JSON_ERROR = "\n".join([
-    json.dumps({"type": "text", "content": "Trying..."}),
-    json.dumps({"type": "error", "error": {"type": "api_error", "message": "rate limited"}}),
+    _assistant(_text("Trying...")),
+    _result("rate limited", is_error=True, subtype="error_during_execution"),
 ])
 
 
@@ -71,7 +111,7 @@ def persona() -> AgentDefinition:
 
 @pytest.fixture
 def adapter(project_root: Path) -> ClaudeCodeAdapter:
-    return ClaudeCodeAdapter(project_root, claude_bin="claude", max_turns=5, timeout=30)
+    return ClaudeCodeAdapter(project_root, claude_bin="claude", timeout=30)
 
 
 def _make_proc(stdout: str = "", stderr: str = "", returncode: int = 0) -> MagicMock:
@@ -115,62 +155,87 @@ class TestToolMap:
 # ── Stream-json parser tests ──────────────────────────────────────────────────
 
 class TestStreamParser:
-    def test_parses_text_events(self) -> None:
+    def test_parses_assistant_text(self) -> None:
         events = list(_parse_stream_lines(FIXTURE_STREAM_JSON))
-        text_events = [e for e in events if e.type == "text"]
-        assert len(text_events) == 2
-        assert text_events[0].content == "Analyzing the codebase..."
+        assistant = [e for e in events if e.type == "assistant"]
+        assert len(assistant) == 2
+        assert assistant[0].text == "Analyzing the codebase..."
+        assert assistant[1].text == "Done. Produced SRS.md."
 
-    def test_parses_tool_use_events(self) -> None:
+    def test_parses_tool_use_blocks(self) -> None:
         events = list(_parse_stream_lines(FIXTURE_STREAM_JSON))
-        tool_uses = [e for e in events if e.type == "tool_use"]
-        assert len(tool_uses) == 1
-        assert tool_uses[0].tool_name == "Read"
-        assert tool_uses[0].tool_input == {"file_path": "SRS.md"}
+        blocks = [b for e in events for b in e.tool_use_blocks]
+        assert len(blocks) == 1
+        assert blocks[0]["name"] == "Read"
+        assert blocks[0]["input"] == {"file_path": "SRS.md"}
+
+    def test_non_message_lines_have_no_text(self) -> None:
+        events = list(_parse_stream_lines(FIXTURE_STREAM_JSON))
+        init = next(e for e in events if e.type == "system")
+        assert init.text == ""
+        assert init.tool_use_blocks == []
 
     def test_skips_blank_lines(self) -> None:
-        raw = "\n".join([
-            "",
-            json.dumps({"type": "text", "content": "hello"}),
-            "   ",
-            json.dumps({"type": "text", "content": "world"}),
-        ])
-        events = list(_parse_stream_lines(raw))
-        assert len(events) == 2
+        raw = "\n".join(["", _assistant(_text("hello")), "   ", _assistant(_text("world"))])
+        assert len(list(_parse_stream_lines(raw))) == 2
 
     def test_empty_input_yields_no_events(self) -> None:
         assert list(_parse_stream_lines("")) == []
         assert list(_parse_stream_lines("   \n\n  ")) == []
 
-    def test_skips_malformed_json(self) -> None:
-        raw = "\n".join([
-            json.dumps({"type": "text", "content": "ok"}),
-            "not json at all",
-            json.dumps({"type": "text", "content": "also ok"}),
-        ])
-        events = list(_parse_stream_lines(raw))
-        assert len(events) == 2
+    def test_skips_malformed_and_non_object_json(self) -> None:
+        raw = "\n".join([_assistant(_text("ok")), "not json", "[1, 2, 3]", '"a string"'])
+        assert len(list(_parse_stream_lines(raw))) == 1  # only the assistant object
 
-    def test_run_result_text_output(self) -> None:
-        events = list(_parse_stream_lines(FIXTURE_STREAM_JSON))
-        result = RunResult(returncode=0, events=events)
-        assert "Analyzing the codebase" in result.text_output
-        assert "Done. Produced SRS.md." in result.text_output
+    def test_text_output_is_the_final_result(self) -> None:
+        result = RunResult(returncode=0, events=list(_parse_stream_lines(FIXTURE_STREAM_JSON)))
+        # the agent's final answer is the result line, not intermediate turns
+        assert result.text_output == "Done. Produced SRS.md."
+
+    def test_text_output_falls_back_to_assistant_without_result(self) -> None:
+        result = RunResult(returncode=0, events=list(_parse_stream_lines(_assistant(_text("hi")))))
+        assert result.text_output == "hi"
 
     def test_run_result_tool_uses(self) -> None:
-        events = list(_parse_stream_lines(FIXTURE_STREAM_JSON))
-        result = RunResult(returncode=0, events=events)
+        result = RunResult(returncode=0, events=list(_parse_stream_lines(FIXTURE_STREAM_JSON)))
         assert len(result.tool_uses) == 1
+        assert result.tool_uses[0]["name"] == "Read"
 
-    def test_run_result_error_events(self) -> None:
+    def test_run_result_usage_and_cost(self) -> None:
+        result = RunResult(returncode=0, events=list(_parse_stream_lines(FIXTURE_STREAM_JSON)))
+        assert result.usage == {"input_tokens": 100, "output_tokens": 20}
+        assert result.total_cost_usd == 0.01
+
+    def test_result_is_error_marks_failure(self) -> None:
         events = list(_parse_stream_lines(FIXTURE_STREAM_JSON_ERROR))
         result = RunResult(returncode=0, events=events)
-        assert len(result.errors) == 1
-        assert result.errors[0].error_message == "rate limited"
+        assert result.is_error is True
+        assert result.succeeded is False
 
-    def test_stream_event_error_message_fallback(self) -> None:
-        ev = StreamEvent(type="error", raw={"error": "plain string error"})
-        assert ev.error_message == "plain string error"
+    def test_success_result_succeeds(self) -> None:
+        result = RunResult(returncode=0, events=list(_parse_stream_lines(FIXTURE_STREAM_JSON)))
+        assert result.succeeded is True
+
+
+# ── Real kernel output (gold-standard capture from claude 2.1.x) ──────────────
+
+
+class TestRealKernelFixture:
+    """Parses an actual `claude -p --output-format stream-json --verbose` capture,
+    so the parser is validated against ground truth — not just synthetic fixtures."""
+
+    GOLD = Path(__file__).parent / "fixtures" / "claude_code" / "real_text_run.jsonl"
+
+    def test_parses_real_captured_output(self) -> None:
+        result = RunResult(returncode=0, events=list(_parse_stream_lines(self.GOLD.read_text())))
+        assert result.succeeded is True
+        assert result.text_output == "ok"
+        assert result.usage  # the real result line carries token usage
+        assert result.total_cost_usd is not None
+
+    def test_real_capture_line_types(self) -> None:
+        events = list(_parse_stream_lines(self.GOLD.read_text()))
+        assert [e.type for e in events] == ["system", "assistant", "result"]
 
 
 # ── Adapter instantiation tests ───────────────────────────────────────────────
@@ -238,7 +303,7 @@ class TestSpawnAgent:
             handle = adapter.spawn_agent(persona, "context", ["read_file"])
 
         assert len(handle.outputs) == 1
-        assert "Analyzing" in handle.outputs[0].description
+        assert "Done. Produced SRS.md." in handle.outputs[0].description
 
     def test_filters_unknown_tools(
         self, adapter: ClaudeCodeAdapter, persona: AgentDefinition
@@ -328,8 +393,8 @@ class TestRunnerOnEvent:
         seen: list[StreamEvent] = []
         with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)):
             run_claude("p", allowed_tools=["Read"], cwd=Path("."), on_event=seen.append)
-        # FIXTURE has 5 lines: text, tool_use, tool_result, text, message
-        assert [e.type for e in seen] == ["text", "tool_use", "tool_result", "text", "message"]
+        # FIXTURE has 5 lines: init, assistant(+tool_use), user(tool_result), assistant, result
+        assert [e.type for e in seen] == ["system", "assistant", "user", "assistant", "result"]
 
     def test_on_event_fires_before_failure(self) -> None:
         seen: list[StreamEvent] = []
@@ -338,7 +403,7 @@ class TestRunnerOnEvent:
             with pytest.raises(ClaudeCodeSpawnError):
                 run_claude("p", allowed_tools=["Read"], cwd=Path("."), on_event=seen.append)
         # both lines were recorded before run_claude raised
-        assert [e.type for e in seen] == ["text", "error"]
+        assert [e.type for e in seen] == ["assistant", "result"]
 
     def test_on_event_optional(self) -> None:
         with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)):
@@ -358,7 +423,7 @@ class TestEventStoreRecording:
     def recording_adapter(
         self, project_root: Path, event_store: EventStore
     ) -> ClaudeCodeAdapter:
-        return ClaudeCodeAdapter(project_root, event_store=event_store, max_turns=5, timeout=30)
+        return ClaudeCodeAdapter(project_root, event_store=event_store, timeout=30)
 
     def test_records_started_streams_completed_in_order(
         self,
@@ -413,9 +478,15 @@ class TestEventStoreRecording:
             for e in event_store.read_stream(run_id)
             if e["event_type"] == EVENT_STREAM
         ]
-        tool_use = next(s for s in streams if s["type"] == "tool_use")
-        assert tool_use["raw"]["name"] == "Read"
-        assert tool_use["raw"]["input"] == {"file_path": "SRS.md"}
+        assistant = next(
+            s for s in streams
+            if s["type"] == "assistant"
+            and any(b.get("type") == "tool_use" for b in s["raw"]["message"]["content"])
+        )
+        content = assistant["raw"]["message"]["content"]
+        tool_use = next(b for b in content if b["type"] == "tool_use")
+        assert tool_use["name"] == "Read"
+        assert tool_use["input"] == {"file_path": "SRS.md"}
 
     def test_completed_payload(
         self,
@@ -467,9 +538,10 @@ class TestEventStoreRecording:
                 recording_adapter.spawn_agent(persona, "ctx", ["read_file"])
 
         streams = [json.loads(e["payload"]) for e in event_store.read_by_type(EVENT_STREAM)]
-        assert [s["type"] for s in streams] == ["text", "error"]
-        error_line = next(s for s in streams if s["type"] == "error")
-        assert error_line["raw"]["error"]["message"] == "rate limited"
+        assert [s["type"] for s in streams] == ["assistant", "result"]
+        result_line = next(s for s in streams if s["type"] == "result")
+        assert result_line["raw"]["result"] == "rate limited"
+        assert result_line["raw"]["is_error"] is True
         assert len(event_store.read_by_type(EVENT_SPAWN_FAILED)) == 1
 
     def test_no_event_store_means_no_recording(
