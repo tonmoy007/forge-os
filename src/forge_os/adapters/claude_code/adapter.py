@@ -2,21 +2,48 @@
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from forge_os.adapters.base import AgentHandle, BaseKernelAdapter, ToolList
-from forge_os.adapters.claude_code.runner import RunResult, run_claude
+from forge_os.adapters.claude_code.hooks import ClaudeSettingsHookWriter
+from forge_os.adapters.claude_code.runner import RunResult, StreamEvent, run_claude
 from forge_os.adapters.claude_code.tool_map import DEFAULT_ABSTRACT_TOOLS, to_claude_tools
 from forge_os.agents.models import AgentDefinition, OutputArtifact
+from forge_os.events.store import EventStore
+
+log = logging.getLogger("forge.kernel.claude_code")
+
+# Event Store event types recorded by this adapter — the determinism boundary
+# (ADR-005 / FR-ES-001). Names follow the PascalCase convention used for
+# EventStore event types (cf. events/model.py EventType, e.g. "StateSaved").
+EVENT_SPAWN_STARTED = "AdapterSpawnStarted"
+EVENT_STREAM = "AdapterStreamEvent"
+EVENT_SPAWN_COMPLETED = "AdapterSpawnCompleted"
+EVENT_SPAWN_FAILED = "AdapterSpawnFailed"
 
 
 class ClaudeCodeAdapter(BaseKernelAdapter):
     """Kernel adapter that drives Claude Code via subprocess + stream-json.
 
     Slice 1: subprocess invocation and stream-json parsing.
-    Slice 2 (planned): hook capture + event-store write.
+    Slice 2: event-store recording (every stream-json line + spawn lifecycle is
+        appended under a per-spawn ``run_id`` stream) and `.claude/settings.json`
+        hook lifecycle.
     Slice 3 (planned): replay from event store.
+
+    When ``event_store`` is injected, each spawn records an ``AdapterSpawnStarted``
+    event, one ``AdapterStreamEvent`` per stream-json line, then either an
+    ``AdapterSpawnCompleted`` or ``AdapterSpawnFailed`` event. The ``run_id`` that
+    groups these events is exposed on ``AgentHandle.metadata["run_id"]``.
+
+    When ``hook_command`` is set, the adapter installs PreToolUse/PostToolUse
+    hooks into `.claude/settings.json` for the duration of the spawn and tears
+    them down afterwards (even if the spawn fails).
     """
 
     adapter_id = "claude-code"
@@ -29,11 +56,15 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
         claude_bin: str = "claude",
         max_turns: int = 10,
         timeout: int = 120,
+        event_store: EventStore | None = None,
+        hook_command: str | None = None,
     ) -> None:
         self.project_root = Path(project_root)
         self.claude_bin = claude_bin
         self.max_turns = max_turns
         self.timeout = timeout
+        self._event_store = event_store
+        self.hook_command = hook_command
 
     def get_default_tools(self) -> ToolList:
         return list(DEFAULT_ABSTRACT_TOOLS)
@@ -46,23 +77,44 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
     ) -> AgentHandle:
         """Invoke claude CLI and return a completed AgentHandle.
 
-        Raises ClaudeCodeSpawnError on non-zero exit or parse errors.
+        Records the spawn lifecycle to the event store (when one is injected)
+        and manages the `.claude/settings.json` hook lifecycle (when a
+        ``hook_command`` is configured). Raises ClaudeCodeSpawnError on
+        non-zero exit or parse errors, or ClaudeSettingsError if hook-config
+        install fails; either way a terminal ``AdapterSpawnFailed`` event is
+        recorded first.
         """
         granted_abstract = self._intersect_tools(tools)
         claude_tools = to_claude_tools(granted_abstract)
-
         prompt = self._build_prompt(persona, context)
+        run_id = _new_run_id()
 
-        result = run_claude(
-            prompt,
-            allowed_tools=claude_tools,
-            cwd=self.project_root,
-            max_turns=self.max_turns,
-            timeout=self.timeout,
-            claude_bin=self.claude_bin,
+        self._record_spawn_started(
+            run_id, persona, context, prompt, granted_abstract, claude_tools
         )
 
-        return self._build_handle(persona, granted_abstract, result)
+        try:
+            with self._hook_context():
+                result = run_claude(
+                    prompt,
+                    allowed_tools=claude_tools,
+                    cwd=self.project_root,
+                    max_turns=self.max_turns,
+                    timeout=self.timeout,
+                    claude_bin=self.claude_bin,
+                    on_event=self._stream_recorder(run_id),
+                )
+        except Exception as exc:
+            # Any spawn-path failure (subprocess error, or hook-config
+            # install/teardown error) records a terminal event and re-raises the
+            # ORIGINAL error unchanged — recording must never mask it, and the
+            # event stream must not be left without a terminal event.
+            self._record_spawn_failed(run_id, exc)
+            raise
+
+        handle = self._build_handle(persona, granted_abstract, result, run_id)
+        self._record_spawn_completed(run_id, handle, result)
+        return handle
 
     def _build_prompt(self, persona: AgentDefinition, context: str) -> str:
         parts = [f"Role: {persona.role}", f"\n{persona.prompt}"]
@@ -70,11 +122,22 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
             parts.append(f"\n\nContext:\n{context}")
         return "\n".join(parts)
 
+    def _hook_context(self) -> AbstractContextManager[Any]:
+        """Hook-config lifecycle for the spawn, or a no-op when disabled."""
+        if self.hook_command is None:
+            return nullcontext()
+        return ClaudeSettingsHookWriter(
+            self.project_root,
+            pre_tool_command=self.hook_command,
+            post_tool_command=self.hook_command,
+        )
+
     def _build_handle(
         self,
         persona: AgentDefinition,
         granted_tools: list[str],
         result: RunResult,
+        run_id: str,
     ) -> AgentHandle:
         outputs = self._extract_outputs(result)
         return AgentHandle(
@@ -83,7 +146,7 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
             stage_id=persona.stage_ids[0] if persona.stage_ids else None,
             status="completed",
             outputs=outputs,
-            metadata=self._build_metadata(persona, granted_tools, result),
+            metadata=self._build_metadata(persona, granted_tools, result, run_id),
         )
 
     def _extract_outputs(self, result: RunResult) -> list[OutputArtifact]:
@@ -97,12 +160,103 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
         persona: AgentDefinition,
         granted_tools: list[str],
         result: RunResult,
+        run_id: str,
     ) -> dict[str, Any]:
         return {
             "adapter": self.adapter_id,
+            "run_id": run_id,
             "tools_granted": granted_tools,
             "tool_use_count": len(result.tool_uses),
             "event_count": len(result.events),
             "text_length": len(result.text_output),
             "returncode": result.returncode,
         }
+
+    # ── Event-store recording (FR-ES-001 / ADR-005) ─────────────────────────
+    #
+    # Recording is an audit side-channel: a write failure must never abort or
+    # mask the actual spawn (mirrors StateManager's best-effort Event Store
+    # dual-write). `_safe_append` swallows store errors but logs them with
+    # context, so observability is preserved without silent failure.
+
+    def _safe_append(self, run_id: str, event_type: str, payload: dict[str, Any]) -> None:
+        if self._event_store is None:
+            return
+        try:
+            self._event_store.append(run_id, event_type, payload)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "event-store append failed (run_id=%s, type=%s): %s",
+                run_id,
+                event_type,
+                exc,
+            )
+
+    def _stream_recorder(
+        self, run_id: str
+    ) -> Callable[[StreamEvent], None] | None:
+        """Build a per-line recorder, or None when no event store is wired."""
+        if self._event_store is None:
+            return None
+
+        def _record(event: StreamEvent) -> None:
+            self._safe_append(run_id, EVENT_STREAM, {"type": event.type, "raw": event.raw})
+
+        return _record
+
+    def _record_spawn_started(
+        self,
+        run_id: str,
+        persona: AgentDefinition,
+        context: str,
+        prompt: str,
+        granted_tools: list[str],
+        claude_tools: list[str],
+    ) -> None:
+        self._safe_append(
+            run_id,
+            EVENT_SPAWN_STARTED,
+            {
+                "adapter": self.adapter_id,
+                "persona_id": persona.id,
+                "role": persona.role,
+                "stage_id": persona.stage_ids[0] if persona.stage_ids else None,
+                "prompt": prompt,
+                "context": context,
+                "granted_tools": granted_tools,
+                "claude_tools": claude_tools,
+                "max_turns": self.max_turns,
+            },
+        )
+
+    def _record_spawn_completed(
+        self, run_id: str, handle: AgentHandle, result: RunResult
+    ) -> None:
+        self._safe_append(
+            run_id,
+            EVENT_SPAWN_COMPLETED,
+            {
+                "adapter": self.adapter_id,
+                "status": handle.status,
+                "returncode": result.returncode,
+                "tool_use_count": len(result.tool_uses),
+                "text_length": len(result.text_output),
+                "metadata": handle.metadata,
+            },
+        )
+
+    def _record_spawn_failed(self, run_id: str, exc: BaseException) -> None:
+        self._safe_append(
+            run_id,
+            EVENT_SPAWN_FAILED,
+            {
+                "adapter": self.adapter_id,
+                "returncode": getattr(exc, "returncode", -1),
+                "error": str(exc),
+            },
+        )
+
+
+def _new_run_id() -> str:
+    """Unique identifier for one spawn, used as the event-store stream id."""
+    return f"ccrun-{uuid4().hex}"
