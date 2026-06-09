@@ -23,7 +23,9 @@ Per D5=B (open-source kernel-first sequencing), tactical work resumed on the **k
 
 **Task-ID collision resolved:** the multi-adapter expansion commit (`deb4bec`) was loosely labelled "P055.06-12"; that label is informal. The phase-doc deliverables table is the single source of truth — P055.06-08 are Slice 2 (just landed), P055.09-15 remain ClaudeCodeAdapter Slices 3-6.
 
-**Deferred (next slices, per `plan/PHASE-05.5-claude-code-adapter.md`):** Slice 3 (replay — `replay_session(run_id)` from the recorded event stream, P055.09-10), Slice 4 (gate integration + `forge adapter status`, P055.11-12), Slice 5 (security enforcer pre-spawn, P055.13-14), Slice 6 (`forge init --adapter claude-code`, P055.15).
+**ClaudeCodeAdapter Slice 3 — landed 2026-06-09 (P055.09-10):** `adapters/claude_code/replay.py` — `ClaudeCodeAdapter.replay_session(run_id)` reconstructs the `AgentHandle` by re-projecting the recorded `AdapterSpawnStarted`/`AdapterStreamEvent`/`AdapterSpawnCompleted` stream **without** invoking the subprocess (FR-ES-003 / FR-ES-004 / ADR-005); `ReplayError` for missing/incomplete/failed runs. Slice 2's completed event now records `handle_id` so replay restores the exact handle. 417 tests (host + clean `python:3.12-slim` Docker, latest deps), ruff clean, compileall clean.
+
+**Deferred (next slices, per `plan/PHASE-05.5-claude-code-adapter.md`):** Slice 4 (gate integration + `forge adapter status`, P055.11-12), Slice 5 (security enforcer pre-spawn, P055.13-14), Slice 6 (`forge init --adapter claude-code`, P055.15).
 
 ## Next Phase (gated)
 

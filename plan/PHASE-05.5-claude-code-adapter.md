@@ -151,7 +151,26 @@ records `AdapterSpawnFailed` with stderr. This is a deliberate, documented trade
 
 ## Slice 3 — Replay
 
-`replay_session(run_id: str)` reads events from the event store and reconstructs the `AgentHandle` without touching the subprocess. This satisfies ADR-005 determinism: the same run ID produces the same handle every time.
+**Status:** Complete (2026-06-09). `adapters/claude_code/replay.py` + `tests/test_adapters_claude_code_replay.py`.
+Full suite 417 passing (host + clean `python:3.12-slim` Docker, latest deps), ruff clean, compileall clean.
+
+`ClaudeCodeAdapter.replay_session(run_id)` (delegating to `replay.replay_session(event_store, run_id)`) reads
+the recorded events for `run_id` and reconstructs the `AgentHandle` **without touching the subprocess**. This
+satisfies ADR-005 / FR-ES-003 determinism: the same run ID produces the same handle every time.
+
+**How it reconstructs (projection, not snapshot):**
+- `AdapterSpawnStarted` → `provider`, `persona_id`, `stage_id`.
+- the `AdapterStreamEvent` lines → a rebuilt `RunResult`, from which `outputs` are re-derived via the shared
+  `extract_text_outputs` (the same projection live spawn uses — single source of truth).
+- `AdapterSpawnCompleted` → `status`, `handle_id` (the one non-derivable field, recorded in Slice 2's completed
+  event for this purpose), and `metadata` (read verbatim — it *is* the recorded projection).
+- The reconstructed handle is `== ` the originally returned handle (Pydantic value equality).
+
+**Failed / incomplete / missing runs** raise `ReplayError`: a failed run produced no handle originally (the spawn
+raised), an incomplete run has no terminal event, and a missing run has no recorded stream.
+
+**Cycle avoidance:** `replay.py` imports the event-type constants + `extract_text_outputs` from `adapter.py` at
+module level; `adapter.py` imports `replay_session` **lazily** inside the method, so module-load is acyclic.
 
 ---
 
