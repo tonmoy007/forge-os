@@ -1,0 +1,35 @@
+name: CI
+
+# Mirrors the local Docker reference gate (L006): the same python:3.12-slim
+# image with freshly-resolved latest deps, running tests + lint + compile.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    container: python:3.12-slim
+    steps:
+      # git is needed by actions/checkout inside the slim image
+      - name: Install git
+        run: apt-get update && apt-get install -y --no-install-recommends git
+
+      - uses: actions/checkout@v4
+
+      - name: Install package (latest deps)
+        run: pip install -e '.[dev]'
+
+      - name: Lint (ruff)
+        run: python -m ruff check src tests
+
+      - name: Tests (pytest)
+        run: python -m pytest -q
+
+      - name: Compile check (compileall)
+        run: python -m compileall -q src tests

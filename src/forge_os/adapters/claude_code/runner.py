@@ -1,4 +1,22 @@
-"""Claude Code CLI subprocess invocation and stream-json line parser."""
+"""Claude Code CLI subprocess invocation and stream-json line parser.
+
+The CLI (`claude -p … --output-format stream-json --verbose`) emits one JSON
+object per line. Verified against claude 2.1.x, each line is an envelope:
+
+    {"type": "system", "subtype": "init", ...}        session metadata
+    {"type": "assistant", "message": {"content": [     one assistant turn
+        {"type": "text", "text": "..."},
+        {"type": "tool_use", "id": "...", "name": "Read", "input": {...}}]}}
+    {"type": "user", "message": {"content": [          tool results fed back
+        {"type": "tool_result", "tool_use_id": "...", "content": "..."}]}}
+    {"type": "result", "subtype": "success"|"error_*", "is_error": false,
+     "result": "<final text>", "usage": {...}, "total_cost_usd": 0.0, ...}
+
+Text lives at ``message.content[].text`` (NOT a top-level ``content`` field) and
+the agent's final answer is the ``result`` line's ``result`` field. Other line
+types (``rate_limit_event``, ``system`` hook subtypes) carry no adapter payload
+and are recorded verbatim but otherwise ignored.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +29,7 @@ from typing import Any
 
 
 class ClaudeCodeSpawnError(RuntimeError):
-    """Raised when the claude subprocess exits with a non-zero code."""
+    """Raised when the claude subprocess exits non-zero or reports an error."""
 
     def __init__(self, returncode: int, stderr: str) -> None:
         super().__init__(f"claude exited {returncode}: {stderr.strip()[:200]}")
@@ -21,28 +39,30 @@ class ClaudeCodeSpawnError(RuntimeError):
 
 @dataclass
 class StreamEvent:
-    """One parsed stream-json line from the claude CLI."""
+    """One parsed stream-json line; ``type`` is the top-level envelope type."""
 
     type: str
     raw: dict[str, Any]
 
-    # Convenience accessors
     @property
-    def content(self) -> str:
-        return self.raw.get("content", "")
+    def _content_blocks(self) -> list[dict[str, Any]]:
+        """Content blocks of an assistant/user message (``[]`` for other lines)."""
+        message = self.raw.get("message")
+        if isinstance(message, dict):
+            blocks = message.get("content")
+            if isinstance(blocks, list):
+                return [b for b in blocks if isinstance(b, dict)]
+        return []
 
     @property
-    def tool_name(self) -> str:
-        return self.raw.get("name", "")
+    def text(self) -> str:
+        """Concatenated text of an assistant message (``''`` for other lines)."""
+        return "".join(b.get("text", "") for b in self._content_blocks if b.get("type") == "text")
 
     @property
-    def tool_input(self) -> dict[str, Any]:
-        return self.raw.get("input", {})
-
-    @property
-    def error_message(self) -> str:
-        err = self.raw.get("error", {})
-        return err.get("message", "") if isinstance(err, dict) else str(err)
+    def tool_use_blocks(self) -> list[dict[str, Any]]:
+        """`tool_use` content blocks of an assistant message."""
+        return [b for b in self._content_blocks if b.get("type") == "tool_use"]
 
 
 @dataclass
@@ -54,20 +74,51 @@ class RunResult:
     stderr: str = ""
 
     @property
+    def _result_event(self) -> StreamEvent | None:
+        for event in reversed(self.events):
+            if event.type == "result":
+                return event
+        return None
+
+    @property
     def text_output(self) -> str:
-        return "\n".join(e.content for e in self.events if e.type == "text" and e.content)
+        """The agent's final text — the ``result`` line, else assistant turns."""
+        result = self._result_event
+        if result is not None and isinstance(result.raw.get("result"), str):
+            return result.raw["result"]
+        return "\n".join(e.text for e in self.events if e.type == "assistant" and e.text)
 
     @property
-    def tool_uses(self) -> list[StreamEvent]:
-        return [e for e in self.events if e.type == "tool_use"]
+    def tool_uses(self) -> list[dict[str, Any]]:
+        """Every ``tool_use`` block across all assistant turns."""
+        blocks: list[dict[str, Any]] = []
+        for event in self.events:
+            if event.type == "assistant":
+                blocks.extend(event.tool_use_blocks)
+        return blocks
 
     @property
-    def errors(self) -> list[StreamEvent]:
-        return [e for e in self.events if e.type == "error"]
+    def usage(self) -> dict[str, Any]:
+        result = self._result_event
+        if result is not None and isinstance(result.raw.get("usage"), dict):
+            return result.raw["usage"]
+        return {}
+
+    @property
+    def total_cost_usd(self) -> float | None:
+        result = self._result_event
+        if result is not None and isinstance(result.raw.get("total_cost_usd"), int | float):
+            return float(result.raw["total_cost_usd"])
+        return None
+
+    @property
+    def is_error(self) -> bool:
+        result = self._result_event
+        return bool(result.raw.get("is_error")) if result is not None else False
 
     @property
     def succeeded(self) -> bool:
-        return self.returncode == 0 and not self.errors
+        return self.returncode == 0 and not self.is_error
 
 
 def _parse_stream_lines(stdout: str) -> Iterator[StreamEvent]:
@@ -79,8 +130,18 @@ def _parse_stream_lines(stdout: str) -> Iterator[StreamEvent]:
             obj = json.loads(line)
         except json.JSONDecodeError:
             continue
-        event_type = obj.get("type", "unknown")
-        yield StreamEvent(type=event_type, raw=obj)
+        if not isinstance(obj, dict):
+            continue
+        yield StreamEvent(type=obj.get("type", "unknown"), raw=obj)
+
+
+def _error_summary(result: RunResult) -> str:
+    event = result._result_event
+    if event is not None:
+        subtype = event.raw.get("subtype", "error")
+        text = event.raw.get("result", "")
+        return f"{subtype}: {text}".strip()[:200]
+    return "no result line in stream"
 
 
 def run_claude(
@@ -88,7 +149,6 @@ def run_claude(
     *,
     allowed_tools: list[str],
     cwd: Path,
-    max_turns: int = 10,
     timeout: int = 120,
     claude_bin: str = "claude",
     on_event: Callable[[StreamEvent], None] | None = None,
@@ -96,20 +156,19 @@ def run_claude(
     """Invoke the claude CLI and return a parsed RunResult.
 
     Each parsed stream-json line is passed to ``on_event`` (if given) in order,
-    so callers can record the transcript to an event store. ``on_event`` fires
-    for every line — including those of a run that ultimately fails — before
-    this function raises. ``on_event`` must not raise: an exception from it
-    propagates and interrupts parsing, so a recording callback should absorb its
-    own infrastructure failures (the adapter's recorder does).
+    so callers can record the transcript to an event store. ``on_event`` must
+    not raise — a raising callback interrupts parsing — so a recording callback
+    should absorb its own infrastructure failures (the adapter's recorder does).
 
-    Raises ClaudeCodeSpawnError if the subprocess exits non-zero.
+    Raises ClaudeCodeSpawnError if the subprocess exits non-zero or the final
+    ``result`` line reports ``is_error``.
     """
     cmd = [
         claude_bin,
         "-p", prompt,
         "--output-format", "stream-json",
+        "--verbose",  # required alongside -p + stream-json
         "--no-session-persistence",
-        "--max-turns", str(max_turns),
     ]
     if allowed_tools:
         cmd += ["--allowedTools", ",".join(allowed_tools)]
@@ -135,6 +194,6 @@ def run_claude(
     result = RunResult(returncode=proc.returncode, events=events, stderr=proc.stderr)
 
     if not result.succeeded:
-        raise ClaudeCodeSpawnError(proc.returncode, proc.stderr)
+        raise ClaudeCodeSpawnError(proc.returncode, proc.stderr or _error_summary(result))
 
     return result

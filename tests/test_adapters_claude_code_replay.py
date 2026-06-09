@@ -25,11 +25,28 @@ from forge_os.adapters.claude_code.adapter import (
 from forge_os.agents.models import AgentDefinition
 from forge_os.events.store import EventStore
 
+_TEXT1 = {"type": "text", "text": "Analyzing the codebase..."}
+_TOOL = {"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "x"}}
+_TOOL_RESULT = {"type": "tool_result", "tool_use_id": "t1", "content": "# SRS content"}
+_TEXT2 = {"type": "text", "text": "Done. Produced SRS.md."}
+
+
+def _assistant(*blocks: dict) -> str:
+    return json.dumps(
+        {"type": "assistant", "session_id": "s1",
+         "message": {"role": "assistant", "content": list(blocks)}}
+    )
+
+
 FIXTURE_STREAM_JSON = "\n".join([
-    json.dumps({"type": "text", "content": "Analyzing the codebase..."}),
-    json.dumps({"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "SRS.md"}}),
-    json.dumps({"type": "tool_result", "tool_use_id": "t1", "content": "# SRS content"}),
-    json.dumps({"type": "text", "content": "Done. Produced SRS.md."}),
+    json.dumps({"type": "system", "subtype": "init", "session_id": "s1"}),
+    _assistant(_TEXT1, _TOOL),
+    json.dumps({"type": "user", "session_id": "s1",
+                "message": {"role": "user", "content": [_TOOL_RESULT]}}),
+    _assistant(_TEXT2),
+    json.dumps({"type": "result", "subtype": "success", "is_error": False, "session_id": "s1",
+                "result": "Done. Produced SRS.md.",
+                "usage": {"input_tokens": 100, "output_tokens": 20}, "total_cost_usd": 0.01}),
 ])
 
 
@@ -48,7 +65,7 @@ def event_store(tmp_path: Path) -> EventStore:
 
 @pytest.fixture
 def adapter(tmp_path: Path, event_store: EventStore) -> ClaudeCodeAdapter:
-    return ClaudeCodeAdapter(tmp_path / "proj", event_store=event_store, max_turns=5, timeout=30)
+    return ClaudeCodeAdapter(tmp_path / "proj", event_store=event_store, timeout=30)
 
 
 @pytest.fixture
@@ -110,7 +127,6 @@ class TestReplaySuccess:
         original = _record_a_spawn(adapter, persona)
         replayed = adapter.replay_session(original.metadata["run_id"])
         assert len(replayed.outputs) == 1
-        assert "Analyzing the codebase" in replayed.outputs[0].description
         assert "Done. Produced SRS.md." in replayed.outputs[0].description
 
     def test_replay_metadata_matches(
@@ -142,12 +158,13 @@ class TestReplaySuccess:
             run_id, EVENT_SPAWN_STARTED,
             {"adapter": "claude-code", "persona_id": "p1", "stage_id": "srs"},
         )
-        event_store.append(
-            run_id, EVENT_STREAM, {"type": "text", "raw": {"type": "text", "content": "Hello"}}
-        )
-        event_store.append(
-            run_id, EVENT_STREAM, {"type": "text", "raw": {"type": "text", "content": "World"}}
-        )
+        for word in ("Hello", "World"):
+            event_store.append(
+                run_id, EVENT_STREAM,
+                {"type": "assistant",
+                 "raw": {"type": "assistant",
+                         "message": {"content": [{"type": "text", "text": word}]}}},
+            )
         event_store.append(
             run_id, EVENT_SPAWN_COMPLETED,
             {"adapter": "claude-code", "handle_id": "h-xyz", "status": "completed",

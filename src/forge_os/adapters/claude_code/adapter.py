@@ -54,14 +54,12 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
         project_root: Path | str,
         *,
         claude_bin: str = "claude",
-        max_turns: int = 10,
         timeout: int = 120,
         event_store: EventStore | None = None,
         hook_command: str | None = None,
     ) -> None:
         self.project_root = Path(project_root)
         self.claude_bin = claude_bin
-        self.max_turns = max_turns
         self.timeout = timeout
         self._event_store = event_store
         self.hook_command = hook_command
@@ -99,7 +97,6 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
                     prompt,
                     allowed_tools=claude_tools,
                     cwd=self.project_root,
-                    max_turns=self.max_turns,
                     timeout=self.timeout,
                     claude_bin=self.claude_bin,
                     on_event=self._stream_recorder(run_id),
@@ -180,6 +177,8 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
             "event_count": len(result.events),
             "text_length": len(result.text_output),
             "returncode": result.returncode,
+            "usage": result.usage,
+            "total_cost_usd": result.total_cost_usd,
         }
 
     # ── Event-store recording (FR-ES-001 / ADR-005) ─────────────────────────
@@ -235,7 +234,6 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
                 "context": context,
                 "granted_tools": granted_tools,
                 "claude_tools": claude_tools,
-                "max_turns": self.max_turns,
             },
         )
 
