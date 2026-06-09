@@ -184,12 +184,32 @@ module level; `adapter.py` imports `replay_session` **lazily** inside the method
 
 ---
 
-## Slice 4 — Gate Integration
+## Slice 4 — Adapter selection + `forge adapter status`
 
-`GateUseCases.run_gate()` currently picks DummyAdapter. After Slice 4, it checks:
-1. Is `claude` binary on `PATH`?
-2. Is adapter configured in `config.yaml`?
-3. If yes to both, use `ClaudeCodeAdapter`. Otherwise fall back to `DummyAdapter`.
+**Status:** Complete (2026-06-09, P055.11-12). 439 tests (host + clean `python:3.12-slim` Docker +
+GitHub CI), ruff clean, compileall clean.
+
+> The original draft said "`GateUseCases.run_gate()` picks DummyAdapter… fall back to DummyAdapter." That
+> was stale: the real selection seam is `create_adapter_from_config(project_root, config)`
+> (`adapters/registry.py`), called from `agents/executor.py::run_stage_agent`. Selection is **config-driven**
+> via `config.default_adapter`, not auto-detection.
+
+**P055.11 — make `claude_code` actually selectable.** `_claude_code_factory` was broken: it passed `model=`
+(which `ClaudeCodeAdapter.__init__` doesn't accept) and had no binary check, so `default_adapter: claude_code`
+would crash. Now it does `shutil.which(claude_bin)` (raising `AdapterRegistryError` with an install hint if
+absent, like `_codex_factory`) and passes `claude_bin` + optional `model`. Model support was threaded end to
+end: `ClaudeCodeAdapter(model=None)` → `run_claude(model=…)` → `--model <m>` only when configured.
+
+**Selection policy (deviation from the stale "fallback" prose).** We keep config-driven selection and **fail
+loud** when the configured adapter is unavailable, rather than silently falling back to `DummyAdapter` —
+silent fallback would produce fake artifacts while the user believes a real kernel ran, violating the
+project's fail-loud rule. The default `default_adapter` is already `dummy`, so a fresh clone works without
+`claude`; you only get `claude_code` by explicitly configuring it, and a missing binary is then a clear error.
+
+**P055.12 — `forge adapter status`.** `use_cases/adapters.py::AdapterUseCases.status()` probes each adapter
+(constructs it via the registry, catching failures) and reports `enabled / default / available / reason /
+capabilities`; *available* = constructs without raising and isn't a placeholder. The CLI command renders it,
+so a user can see at a glance whether `claude_code` is selectable right now (binary on PATH? dep installed?).
 
 ---
 

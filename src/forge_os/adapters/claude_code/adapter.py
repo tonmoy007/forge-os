@@ -55,12 +55,14 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
         *,
         claude_bin: str = "claude",
         timeout: int = 120,
+        model: str | None = None,
         event_store: EventStore | None = None,
         hook_command: str | None = None,
     ) -> None:
         self.project_root = Path(project_root)
         self.claude_bin = claude_bin
         self.timeout = timeout
+        self.model = model
         self._event_store = event_store
         self.hook_command = hook_command
 
@@ -99,6 +101,7 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
                     cwd=self.project_root,
                     timeout=self.timeout,
                     claude_bin=self.claude_bin,
+                    model=self.model,
                     on_event=self._stream_recorder(run_id),
                 )
         except Exception as exc:

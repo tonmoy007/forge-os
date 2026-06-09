@@ -203,6 +203,27 @@ class AsyncToSyncBridge(BaseKernelAdapter):
 
     # ---- KernelAdapter stubs -------------------------------------------------
 
+    @property
+    def optional_capabilities(self) -> frozenset[str]:
+        """Runtime capabilities of the wrapped kernel, for introspection
+        (e.g. `forge adapter status`). Unlike a plain BaseKernelAdapter (whose
+        capabilities are a static class attribute), the bridge derives them from
+        the inner adapter's KernelCapabilities flags so they aren't lost."""
+        caps = self._inner.get_capabilities()
+        flags = {
+            "streaming": caps.streaming,
+            "deterministic_output": caps.deterministic_output,
+            "extended_thinking": caps.extended_thinking,
+            "prompt_caching": caps.prompt_caching,
+            "vision": caps.vision,
+            "batch_api": caps.batch_api,
+            "hooks_native": caps.hooks_native,
+            "subagents_native": caps.subagents_native,
+            "mcp_remote": caps.mcp_remote,
+            "mcp_local_stdio": caps.mcp_local_stdio,
+        }
+        return frozenset(name for name, enabled in flags.items() if enabled)
+
     def on_event(self, event: LifecycleEvent, session: PipelineState) -> EventResponse:
         return EventResponse(handled=True, message="bridge: no-op on_event")
 

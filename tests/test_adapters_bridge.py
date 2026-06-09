@@ -177,3 +177,18 @@ class TestOnEvent:
         resp = bridge.on_event(None, None)  # type: ignore[arg-type]
         assert isinstance(resp, EventResponse)
         assert resp.handled is True
+
+
+class TestOptionalCapabilities:
+    def test_derived_from_inner_capabilities(self) -> None:
+        # The bridge must surface the inner kernel's capability flags (so
+        # `forge adapter status` doesn't show empty capabilities for bridged
+        # adapters), not the empty BaseKernelAdapter default.
+        inner = HumanAdapter(print_fn=lambda _: None)
+        bridge = AsyncToSyncBridge(inner)
+        caps = inner.get_capabilities()
+        result = bridge.optional_capabilities
+        assert isinstance(result, frozenset)
+        assert ("streaming" in result) == caps.streaming
+        assert ("hooks_native" in result) == caps.hooks_native
+        assert ("vision" in result) == caps.vision

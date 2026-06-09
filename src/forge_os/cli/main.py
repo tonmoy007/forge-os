@@ -45,6 +45,7 @@ from forge_os.project.status import (
     stale_artifact_count,
 )
 from forge_os.schemas.config import SUPPORTED_PROFILES
+from forge_os.use_cases.adapters import AdapterUseCases
 
 # ─── Console & App Structure ───────────────────────────────────────────────────
 
@@ -545,6 +546,47 @@ def adapter_list(
             ADAPTER_CLASS_NAMES[adapter_id],
             str(adapter_config.get("enabled", False)),
             "yes" if adapter_id == config.default_adapter else "",
+        )
+    console.print(table)
+
+
+@adapter_app.command("status")
+def adapter_status(
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
+) -> None:
+    """Show which adapters are configured and actually selectable right now."""
+
+    try:
+        root = _resolve_project_root(path)
+        statuses = AdapterUseCases(root).status()
+    except (ProjectNotFoundError, ConfigError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    table = Table(title="Forge Adapter Status")
+    table.add_column("ID")
+    table.add_column("Implementation")
+    table.add_column("Enabled")
+    table.add_column("Default")
+    table.add_column("Available")
+    table.add_column("Capabilities / Reason")
+    for status in statuses:
+        if status.available:
+            availability = "[green]yes[/green]"
+            detail = ", ".join(status.capabilities)
+        else:
+            availability = "[red]no[/red]"
+            detail = f"[dim]{status.reason}[/dim]"
+        table.add_row(
+            status.adapter_id,
+            status.implementation,
+            "yes" if status.enabled else "",
+            "yes" if status.is_default else "",
+            availability,
+            detail,
         )
     console.print(table)
 
