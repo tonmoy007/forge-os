@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
 from typer.testing import CliRunner
@@ -133,3 +134,16 @@ def test_adapter_and_agent_cli_list_commands() -> None:
         assert "release_manager" in agent_result.output
         assert contract_result.exit_code == 0, contract_result.output
         assert "srs_outputs" in contract_result.output
+
+
+def test_adapter_status_cli_command() -> None:
+    # Mock the binary probe so the rendered table is identical on the dev host
+    # (claude installed) and in clean Docker/CI (claude absent) — L001.
+    with isolated_filesystem():
+        runner.invoke(app, ["init", "--name", "Demo", "--profile", "standard"])
+        with patch("shutil.which", return_value=None):
+            result = runner.invoke(app, ["adapter", "status"])
+
+    assert result.exit_code == 0, result.output
+    assert "Forge Adapter Status" in result.output
+    assert "DummyAdapter" in result.output

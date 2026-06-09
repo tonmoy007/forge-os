@@ -95,10 +95,19 @@ def _dummy_factory(project_root: Path, config: dict[str, object]) -> KernelAdapt
 
 
 def _claude_code_factory(project_root: Path, config: dict[str, object]) -> KernelAdapter:
+    import shutil
+    claude_bin = str(config.get("claude_bin", "claude"))
+    if shutil.which(claude_bin) is None:
+        raise AdapterRegistryError(
+            f"claude_code adapter requires the `{claude_bin}` binary on PATH. "
+            "Install Claude Code: https://docs.claude.com/en/docs/claude-code"
+        )
     from forge_os.adapters.claude_code.adapter import ClaudeCodeAdapter
+    model = config.get("model")
     return ClaudeCodeAdapter(
         project_root=project_root,
-        model=str(config.get("model", "claude-opus-4-7")),
+        claude_bin=claude_bin,
+        model=str(model) if model else None,
     )
 
 

@@ -1,60 +1,52 @@
-# tasks/todo.md — Phase 05.5 Slice 3: ClaudeCodeAdapter Replay
+# tasks/todo.md — Phase 05.5 Slice 4: Adapter selection + `forge adapter status`
 
-> Slice 2 (P055.06-08, hooks + event-store recording) is merged (PR #3). This is
-> Slice 3 per the phase-doc deliverables table.
+> Slices 1–3 + 1.5 (real-contract fix) merged. CI live (PRs gated). This is Slice 4
+> per the phase-doc deliverables table (P055.11-12).
 
-## Slice 3 — Replay from the Event Store (P055.09-10)
+## Slice 4 — make ClaudeCodeAdapter selectable + `forge adapter status` (P055.11-12)
 
 **SRS traceability:**
-- **FR-ES-003** (Replay — reconstruct state by re-projecting events; replay does NOT re-invoke AI agents).
-- **FR-ES-004** (Projection Engine — current state derived by replaying events).
-- Honours ADR-005 (determinism boundary): the same `run_id` yields the same `AgentHandle` every time, without the subprocess.
+- **FR-KA-003** (Multiple Implementations — user switches kernels by config change; no core code change) — selecting `claude_code` via `config.default_adapter` must actually work.
+- **FR-KA-002** (Capability Introspection — adapter reports hook support, deterministic-output) — `forge adapter status` surfaces availability + capabilities.
+
+### Root problem found (P055.11)
+`_claude_code_factory` (`adapters/registry.py:97`) is **broken**: it passes `model=…` to
+`ClaudeCodeAdapter(...)`, which has no `model` param (would `TypeError` on selection), and — unlike
+`_codex_factory` — it has **no `shutil.which("claude")` binary check**. So `default_adapter: claude_code`
+crashes instead of producing a clean error or a working adapter.
 
 ### Tasks
 
-- [x] **P055.09** — `adapters/claude_code/replay.py`: `replay_session(event_store, run_id) -> AgentHandle` re-projects the recorded `AdapterSpawnStarted` / `AdapterStreamEvent` / `AdapterSpawnCompleted` stream into the original `AgentHandle` **without** invoking the subprocess. Single error boundary → `ReplayError` for missing / incomplete / failed / malformed runs. `ClaudeCodeAdapter.replay_session(run_id)` delegates to it (lazy import → no import cycle).
-- [x] **P055.10** — Tests: `tests/test_adapters_claude_code_replay.py` (18 tests) — replay reconstructs the exact original handle; `subprocess.run` never called (happy + failed paths); deterministic; projects from hand-crafted store events; ReplayError on unknown/incomplete/failed/no-store/malformed-record.
+- [x] **P055.11a** — Fix `_claude_code_factory`: `shutil.which(claude_bin)` check → clean `AdapterRegistryError` with an install hint if absent (mirrors `_codex_factory`); pass `claude_bin` + optional `model` correctly.
+- [x] **P055.11b** — Thread real model support: `ClaudeCodeAdapter(model=None)` → `run_claude(model=...)` → `--model <model>` only when configured (so `config.adapters.claude_code.model` is honoured instead of silently ignored).
+- [x] **P055.12** — `forge adapter status`: a new `use_cases/adapters.py::AdapterUseCases.status()` that reports, per adapter, {enabled, default, available, reason, capabilities} — *available* = the factory constructs without raising and isn't a placeholder. New `@adapter_app.command("status")` renders it.
 
-### Supporting changes to Slice 2 recording (needed for faithful replay)
-- `adapter.py`: extract `extract_text_outputs(result)` as a module function (shared by live spawn and replay — DRY, single projection of text → outputs).
-- `adapter.py`: record `handle_id` in the `AdapterSpawnCompleted` event (the only non-derivable handle field; everything else is reconstructed from the stream + Started/Completed records).
+### Selection-policy decision (deviation from stale phase-doc text, documented)
+The phase doc's Slice 4 prose says "auto-pick claude_code when available, else fall back to DummyAdapter."
+The **real** seam is `create_adapter_from_config` (config-driven `default_adapter`), not the
+`use_cases/gates.py` the doc names. We keep config-driven selection and **fail loud** when the configured
+adapter is unavailable — silent fallback to Dummy would produce fake artifacts while the user believes
+they're running a real kernel, violating the project's "fail loud / no silent failures" rule. Out-of-the-box
+default is already `dummy`, so a fresh clone works without claude; you only get claude_code by explicitly
+configuring it, and then a missing binary is a clear error (+ visible in `adapter status`).
 
-### Gate answers (multi-file change)
-
-1. **Which SRS requirement?** FR-ES-003 (replay), FR-ES-004 (projection engine); ADR-005 determinism.
-2. **Which files?**
-   - New: `src/forge_os/adapters/claude_code/replay.py`, `tests/test_adapters_claude_code_replay.py`
-   - Modified: `src/forge_os/adapters/claude_code/adapter.py` (extract helper + record handle_id + `replay_session` method), `src/forge_os/adapters/claude_code/__init__.py` (export `ReplayError`)
-   - Docs: `plan/CURRENT_PHASE.md`, `plan/PHASE-05.5-claude-code-adapter.md`
-3. **How verified?**
-   - `test_replay_reconstructs_handle_without_subprocess` (`subprocess.run` asserted not called during replay)
-   - `test_replay_equals_original_handle` (full `AgentHandle` equality after a recorded spawn)
-   - `test_replay_is_deterministic` (two replays of one run_id are equal)
-   - `test_replay_failed_run_raises`, `test_replay_unknown_run_raises`, `test_replay_incomplete_run_raises`, `test_replay_no_event_store_raises`
-   - Full suite in clean `python:3.12-slim` Docker (latest deps, per L006).
-4. **What could break?**
-   - Recording `handle_id` is additive to the Completed payload — existing recording tests unaffected.
-   - Extracting `extract_text_outputs` is a behavior-preserving refactor of a 3-line method (call site updated in the same change); existing spawn tests unaffected.
-   - Import cycle (adapter ↔ replay) avoided: replay imports from adapter at module level; adapter imports replay **lazily** inside `replay_session`.
-
-### Design decisions
-- **Projection, not snapshot**: replay rebuilds a `RunResult` from the recorded `AdapterStreamEvent`s and re-derives `outputs` via the shared `extract_text_outputs` — proving the recorded stream is sufficient (the determinism showcase), not just reading back a stored answer. `metadata` is read verbatim from the recorded Completed event (it *is* the recorded projection; re-deriving would duplicate `_build_metadata`). `handle_id` is restored from the record (non-derivable).
-- **Failed runs raise**: the original `spawn_agent` returned no handle for a failed run (it raised); replay mirrors that — `ReplayError` carrying the recorded returncode + error, deterministic every time.
+### Gate answers
+1. **SRS:** FR-KA-003 (config-driven kernel switch), FR-KA-002 (capability/availability introspection).
+2. **Files:** modify `adapters/registry.py`, `adapters/claude_code/adapter.py`, `adapters/claude_code/runner.py`, `cli/main.py`; new `use_cases/adapters.py`, `tests/test_use_cases_adapters.py`; extend `tests/test_adapters_claude_code.py` (factory + --model) and the CLI test for `adapter status`.
+3. **Verify:** factory raises when `shutil.which` is None / constructs when present; `--model` flag threaded; `status()` marks claude_code available iff binary present (mock `shutil.which`); `forge adapter status` renders + exits 0. Full suite in clean Docker (L006) + GitHub CI.
+4. **What could break:** `create_adapter_from_config` for `default_adapter: dummy` (the default) is unchanged → existing flows unaffected. The factory fix only changes the claude_code path (currently crashing). `--model` defaults None → no `--model` arg → identical to current behaviour for existing tests.
 
 ## Review section
 
 ### Validation
-- Host: 422 passed, ruff clean, compileall clean.
-- Clean Docker (`python:3.12-slim`, latest deps): 422 passed, ruff clean, compileall clean (re-run after review fixes).
-- No import cycle (verified by direct `import forge_os.adapters.claude_code.replay`); G1/G3 clean.
+- Host: 440 passed, ruff clean, compileall clean.
+- Clean Docker (`python:3.12-slim`, latest deps): re-run after review fixes (pending confirm at write time).
+- GitHub CI: green on the PR (now live).
+- Manual smoke: `forge adapter status` shows `claude_code` available with the binary on PATH, bridged adapters (`claude_raw`, `human`) now show real capabilities, `codex` shows its install hint, `openclaw` "not implemented".
 
-### Adversarial review (4 dimensions × per-finding verification): 9 confirmed / 15 raw
-Applied judgment against the project's own rules — including the **trust-internal-data** rule (don't re-validate data validated at write) vs. **error-handling.md** (wrap DB/file reads). The review even contradicted itself (confirmed missing-`handle_id` → KeyError but refuted the identical concern for `status`/`metadata`).
-
-**Fixed — one error boundary instead of scattered guards:** wrapped the event-store read/projection in a single `try/except (KeyError, TypeError, JSONDecodeError) → ReplayError(...)`. This converts deserialization failures (missing keys from an older schema, corrupt JSON) into a clean domain error uniformly — covering handle_id (F1), type/raw (F2), and the refuted status/metadata/persona_id cases — without per-field `.get()` noise. Control-flow `ReplayError`s (no-start/incomplete/failed) pass through untouched (not in the catch tuple). Justified by error-handling.md ("wrap DB reads") for a user-facing op (`forge replay`); not over-engineering — it's a single boundary at the read seam.
-
-**Rejected (with reasoning):**
-- F5 (non-dict `raw` → AttributeError): pure-corruption scenario; deliberately did NOT catch `AttributeError` (too broad — would mask real bugs). Consistent with `EventStore.replay_state`'s unguarded reads and the trust-internal-data rule.
-- The refuted strict-access findings (status/returncode/metadata/persona_id/adapter, multi-run isolation, persona-None): the single boundary already covers the missing-key cases uniformly; no per-field defensive code added.
-
-**Tests added (6):** completed event missing `handle_id` → ReplayError; stream event missing keys → ReplayError; failed-only/no-start → "no start event"; failed-run replay invokes no subprocess; replay projects outputs from hand-crafted store events (proves store-sourced, fixture replay per P055.10); determinism asserts `handle_id` equality explicitly.
+### Adversarial review (4 dimensions × per-finding verification): 7 confirmed / 8 raw → 3 distinct issues
+- **Bridged adapters showed empty capabilities** (the `type: ignore`-flagged finding was reported 4× — counted once). `getattr(adapter, "optional_capabilities", …)` returned empty for `AsyncToSyncBridge`-wrapped adapters. Fixed by adding an `optional_capabilities` property on the bridge that derives capability names from the inner adapter's `KernelCapabilities` flags (streaming/vision/hooks_native/…). Left `supports()` untouched (separate API, out of scope).
+- **`registry: object` + `type: ignore`** in `_probe` → typed it `AdapterRegistry`, dropped the suppression.
+- **Env-dependent status tests** (L001) → the two tests probed all adapters (incl. `claude_code`) without mocking `shutil.which`, so they passed on host *and* Docker only by luck. Mocked `shutil.which` in both for determinism.
+- Refuted (correctly): a false "unused import" claim (`load_config` is used).
+- Tests added: bridge `optional_capabilities` derivation; the two status tests made deterministic.

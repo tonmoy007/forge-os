@@ -32,6 +32,7 @@ from forge_os.adapters.claude_code.tool_map import (
     to_abstract_tools,
     to_claude_tools,
 )
+from forge_os.adapters.registry import AdapterRegistryError, get_adapter_registry
 from forge_os.agents.models import AgentDefinition
 from forge_os.events.store import EventStore
 
@@ -236,6 +237,53 @@ class TestRealKernelFixture:
     def test_real_capture_line_types(self) -> None:
         events = list(_parse_stream_lines(self.GOLD.read_text()))
         assert [e.type for e in events] == ["system", "assistant", "result"]
+
+
+# ── Slice 4: registry factory selection (binary check + model) ────────────────
+
+
+class TestClaudeCodeFactory:
+    def test_selection_raises_when_binary_missing(self, tmp_path: Path) -> None:
+        with patch("shutil.which", return_value=None):
+            with pytest.raises(AdapterRegistryError, match="binary on PATH"):
+                get_adapter_registry().create("claude_code", tmp_path, {})
+
+    def test_selection_builds_when_binary_present(self, tmp_path: Path) -> None:
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            adapter = get_adapter_registry().create(
+                "claude_code", tmp_path, {"model": "claude-sonnet-4-6"}
+            )
+        assert isinstance(adapter, ClaudeCodeAdapter)
+        assert adapter.model == "claude-sonnet-4-6"
+
+    def test_selection_has_no_model_by_default(self, tmp_path: Path) -> None:
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            adapter = get_adapter_registry().create("claude_code", tmp_path, {})
+        assert adapter.model is None  # type: ignore[attr-defined]
+
+    def test_selection_honours_custom_claude_bin(self, tmp_path: Path) -> None:
+        with patch("shutil.which", return_value="/opt/claude") as which:
+            adapter = get_adapter_registry().create(
+                "claude_code", tmp_path, {"claude_bin": "claude-next"}
+            )
+        which.assert_called_with("claude-next")
+        assert adapter.claude_bin == "claude-next"  # type: ignore[attr-defined]
+
+
+# ── Slice 4: runner --model flag ──────────────────────────────────────────────
+
+
+class TestRunnerModel:
+    def test_model_adds_flag(self) -> None:
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)) as mock_run:
+            run_claude("p", allowed_tools=["Read"], cwd=Path("."), model="claude-sonnet-4-6")
+        cmd = mock_run.call_args[0][0]
+        assert cmd[cmd.index("--model") + 1] == "claude-sonnet-4-6"
+
+    def test_no_model_means_no_flag(self) -> None:
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)) as mock_run:
+            run_claude("p", allowed_tools=["Read"], cwd=Path("."))
+        assert "--model" not in mock_run.call_args[0][0]
 
 
 # ── Adapter instantiation tests ───────────────────────────────────────────────

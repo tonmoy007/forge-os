@@ -151,6 +151,7 @@ def run_claude(
     cwd: Path,
     timeout: int = 120,
     claude_bin: str = "claude",
+    model: str | None = None,
     on_event: Callable[[StreamEvent], None] | None = None,
 ) -> RunResult:
     """Invoke the claude CLI and return a parsed RunResult.
@@ -172,6 +173,8 @@ def run_claude(
     ]
     if allowed_tools:
         cmd += ["--allowedTools", ",".join(allowed_tools)]
+    if model:
+        cmd += ["--model", model]
 
     try:
         proc = subprocess.run(
