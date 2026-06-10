@@ -174,3 +174,63 @@ def test_agent_run_log_records_injected_lessons() -> None:
         assert record["metadata"]["approved_lessons"][0]["text"] == (
             "Always validate contract outputs."
         )
+
+
+def test_dormant_lessons_are_excluded_from_context(tmp_path: Path) -> None:
+    store = LessonStore(tmp_path)
+    lesson = store.add("Dormant lessons must stay out of context.", confidence=0.95)
+    _ = store.approve(lesson.id)
+    document = store.load()
+    document.lessons[0].dormant = True
+    store.save(document)
+
+    assert store.approved_for_context() == []
+    assert store.render_context() == []
+
+
+def test_render_context_records_usage(tmp_path: Path) -> None:
+    store = LessonStore(tmp_path)
+    lesson = store.add("Usage must be recorded on injection.", confidence=0.95)
+    _ = store.approve(lesson.id)
+
+    first = store.render_context()
+    second = store.render_context()
+
+    assert [entry["id"] for entry in first] == [lesson.id]
+    assert [entry["id"] for entry in second] == [lesson.id]
+    refreshed = store.load().lessons[0]
+    assert refreshed.use_count == 2
+    assert refreshed.last_used_at is not None
+
+
+def test_revive_clears_dormancy(tmp_path: Path) -> None:
+    store = LessonStore(tmp_path)
+    lesson = store.add("Dormant lessons remain available for revival.", confidence=0.95)
+    _ = store.approve(lesson.id)
+    document = store.load()
+    document.lessons[0].dormant = True
+    document.lessons[0].dormant_at = "2026-06-01T00:00:00Z"
+    store.save(document)
+
+    revived = store.revive(lesson.id)
+
+    assert revived.dormant is False
+    assert revived.dormant_at is None
+    assert [item.id for item in store.approved_for_context()] == [lesson.id]
+
+
+def test_lessons_yaml_without_usage_fields_loads_with_defaults(tmp_path: Path) -> None:
+    store = LessonStore(tmp_path)
+    lesson = store.add("Old store files must keep loading.", confidence=0.9)
+    _ = store.approve(lesson.id)
+    raw = yaml.safe_load(store.path.read_text(encoding="utf-8"))
+    for field in ("last_used_at", "use_count", "dormant", "dormant_at"):
+        del raw["lessons"][0][field]
+    _ = store.path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+
+    loaded = store.load().lessons[0]
+
+    assert loaded.last_used_at is None
+    assert loaded.use_count == 0
+    assert loaded.dormant is False
+    assert loaded.dormant_at is None
