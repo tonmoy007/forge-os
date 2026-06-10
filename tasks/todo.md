@@ -37,12 +37,28 @@
 - Scheduler tests: injected clock, no sleeps (testing rules).
 
 ## Status
-- [ ] Map seams (workflow `map-phase10`)
-- [ ] WS-A daemon core — PR
-- [ ] WS-B dreamer — PR
-- [ ] WS-C observer/ACP — PR
-- [ ] WS-D lazy context — PR
-- [ ] Exit checklist + CURRENT_PHASE → Phase 11 + RESUME refresh
+- [x] Map seams (workflow `map-phase10` — 4 parallel explorers)
+- [x] WS-B dreamer — PR #15 (review: 18 confirmed → 13 fixed, 3 rejected w/ reasons, 2 no-gap notes)
+- [x] WS-A daemon core — PR #16 (review: 17 confirmed → 9 fixed + 4 documented, 4 rejected w/ reasons)
+- [x] WS-D lazy context — PR #17 (review: 5 confirmed → all fixed)
+- [x] WS-C observer/ACP — PR #18 (review: 17 confirmed → 14 fixed, 3 no-gap notes)
+- [x] Integration PR: dreamer daemon tasks (FR-BD-003), `forge status` alerts (P10.11),
+      exit checklist, CURRENT_PHASE → Phase 11 pointer, RESUME refresh
+
+## Review section (phase wrap)
+
+- 649 tests, ruff clean, compileall clean — host + clean python:3.12-slim Docker + CI
+  on every PR.
+- Exit-checklist smoke (real project, real daemon process): init → dummy agent run →
+  digest written for the active day → decay/scan run → context budget/lazy-stats →
+  daemon start: heartbeat + dreamer-digest/decay/reingest all executed on first tick →
+  graceful stop. Daemon optional: every core path works without it.
+- Notable review catches across the phase: ACPClient infinite-block receive (would have
+  stalled the whole daemon), daemon restart bricked by zombie children, double-start
+  TOCTOU, alert spam, contract-context gaps. All fixed with regression tests.
+- Deferred (documented, not silent): stop-timeout SIGKILL escalation (spec'd fail-loud),
+  use_count cap, lesson-dedup beyond exact text, Windows daemon support (POSIX-only this
+  phase), PID-reuse hardening beyond zombie reap.
 
 ---
 

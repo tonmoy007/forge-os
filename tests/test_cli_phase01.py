@@ -218,3 +218,33 @@ def test_explain_known_topic() -> None:
     assert result.exit_code == 0
     assert "Phase 01 uses secure defaults" in result.output
     assert "security profiles" in result.output
+
+
+def test_status_renders_daemon_alerts_when_present() -> None:
+    # P10.11 / FR-BD-002: alerts surface in `forge status`.
+    fake_alerts = [
+        {
+            "severity": "warning",
+            "source": "acp-registry",
+            "message": "ACP registry is not accessible",
+            "created_at": "2026-06-10T12:00:00Z",
+        }
+    ]
+    with isolated_filesystem():
+        _ = runner.invoke(app, ["init", "--name", "Demo"])
+        with patch("forge_os.cli.main.daemon_alerts", return_value=fake_alerts):
+            result = runner.invoke(app, ["status"])
+
+    assert result.exit_code == 0, result.output
+    assert "Daemon Alerts" in result.output
+    assert "acp-registry" in result.output
+
+
+def test_status_omits_alert_table_when_no_alerts() -> None:
+    with isolated_filesystem():
+        _ = runner.invoke(app, ["init", "--name", "Demo"])
+        with patch("forge_os.cli.main.daemon_alerts", return_value=[]):
+            result = runner.invoke(app, ["status"])
+
+    assert result.exit_code == 0, result.output
+    assert "Daemon Alerts" not in result.output

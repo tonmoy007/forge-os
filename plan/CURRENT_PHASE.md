@@ -1,11 +1,40 @@
 # Current Forge OS Phase
 
-> ⛔ **STRATEGIC PAUSE — 2026-05-13.** Phase 10 implementation is **paused** pending the strategic decisions in `/STATUS.md` (D4-D8: name three real users, pick fork A/B/C, set kill criteria). Do not resume tactical phase work until D5 resolves.
->
 > **Read order:** `/STATUS.md` → `/CLAUDE.md` → this file → the current phase file.
 >
 > **Session Continuity:** If this session is interrupted, run `git log --oneline -5 && git diff HEAD && cat plan/RESUME.md 2>/dev/null || echo "No RESUME.md"` before continuing.
-> Last validated: 371 tests passed (host `.venv` + clean `python:3.12-slim` Docker, latest deps), ruff clean, compileall clean — 2026-06-08.
+> Last validated: 649 tests passed (host `.venv` + clean `python:3.12-slim` Docker, latest deps), ruff clean, compileall clean — 2026-06-10.
+>
+> The 2026-05-13 strategic pause was lifted 2026-06-10 by owner direction ("complete next
+> phase") after the kernel-first arc (Phase 05.5) shipped and the OSS launch prep merged.
+
+## Phase 10 — Daemon, Dreamer, Observer, Lazy Context: COMPLETE (2026-06-10)
+
+Executed as four agent-built workstreams, each adversarially reviewed (4 dimensions ×
+per-finding verification), Docker-validated, and merged via CI-gated PRs:
+
+- **WS-A daemon core (PR #16, P10.01-04):** optional POSIX daemon (`forge daemon
+  start/stop/status/logs/restart`), `DaemonStateStore` (atomic, `forge_dir`-injectable,
+  capped+deduped alerts), fixed-delay `TaskRunner` with task AND callback failure
+  isolation, zombie-reap + O_EXCL start lock, rotating log.
+- **WS-B Dreamer (PR #15, P10.05-09):** daily digest (`pipeline/log/daily-*.md`, only on
+  activity), exponential confidence decay + dormancy (<0.3 or 30d unused; reversible,
+  never deletes), usage tracking on context injection, tension detection + weekly
+  reflection re-ingestion (propose-only). `forge dreamer digest/scan/decay`.
+- **WS-C Observer & ACP (PR #18, P10.10-14):** registry checks, stale-session cleanup,
+  one-attempt agent restart, uptime/restart metrics (`daemon/metrics.json`) — registered
+  as daemon tasks behind `features.observer` (default off). Phase 09 ACP session stubs
+  implemented. Hardening: `ACPClient._receive` select timeout (hung agent can no longer
+  stall the daemon), consecutive-alert dedup, client stop in `finally`.
+- **WS-D lazy context (PR #17, P10.15-19):** skill menu + on-demand expansion,
+  low-confidence lesson index, 25% lazy-share budget guard with deterministic trimming,
+  `forge context budget` / `lazy-stats`, `_stage_context.lazy_context` (never breaks spawns).
+- **Integration (this PR):** Dreamer tasks scheduled in the daemon (daily digest/decay,
+  weekly re-ingestion — FR-BD-003), daemon alerts rendered in `forge status` (P10.11).
+
+Exit checklist: all items pass — daemon round-trip with all 4 built-in tasks executing,
+digest/decay/scan/budget/lazy-stats smoke on a real project, 649 tests, ruff, compileall,
+clean Docker, CI. Daemon remains optional: core CLI works without it.
 
 ## Active Work: Phase 05.5 (kernel-first, D5=B)
 
@@ -37,21 +66,18 @@ Per D5=B (open-source kernel-first sequencing), tactical work resumed on the **k
 
 **Phase 05.5 COMPLETE.** Next milestone: open-source launch prep per D5 (Apache-2.0 LICENSE + README rewrite). Phase 10 (Daemon/Dreamer/lazy context) stays paused pending `/STATUS.md` D4/D3 owner decisions.
 
-## Next Phase (gated)
+## Next Phase
 
-- Phase: 10
-- File: `plan/PHASE-10-daemon-dreamer-lazy-context.md`
-- Status: **paused (strategic review)** — was: in-progress
-
-## Current Objective
-
-Add optional always-on behavior: background daemon, Observer scheduling, Dreamer daily/weekly maintenance, lesson decay, lazy context loading, and continuous ACP agent health monitoring via the session management foundation from Phase 08.
+- Phase: 11 (Channel adapters, OpenClaw, extension/plugin system)
+- File: `plan/PHASE-11-channels-openclaw-extensions.md`
+- Status: **not started** — owner go/no-go recommended before starting (D4 adopter/contributor
+  question in `/STATUS.md` remains open; Phase 11 is outward-facing surface area).
 
 ## Last Completed Phase
 
-- Phase: 09
-- File: `plan/PHASE-09-health-global-skills.md`
-- Status: complete
+- Phase: 10
+- File: `plan/PHASE-10-daemon-dreamer-lazy-context.md`
+- Status: complete (2026-06-10)
 
 ## Discipline & Clean Code Enforcement (Phase 08+)
 
