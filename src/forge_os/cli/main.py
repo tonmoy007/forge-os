@@ -35,6 +35,7 @@ from forge_os.cli.commands.backtrack import backtrack_app
 from forge_os.cli.commands.daemon import daemon_app
 from forge_os.cli.commands.dreamer import dreamer_app
 from forge_os.cli.commands.health import health_app
+from forge_os.cli.commands.lazy_context import lazy_budget, lazy_stats
 from forge_os.cli.commands.security import security_app
 from forge_os.config.loader import ConfigError, load_config
 from forge_os.context.pruner import ContextPruner, ContextPrunerError
@@ -80,6 +81,9 @@ app.add_typer(lesson_app, name="lesson")
 app.add_typer(reflection_app, name="reflection")
 app.add_typer(artifact_app, name="artifact")
 app.add_typer(context_app, name="context")
+# Phase 10 lazy-context commands surface under the existing `context` group.
+context_app.command("budget")(lazy_budget)
+context_app.command("lazy-stats")(lazy_stats)
 app.add_typer(backtrack_app, name="backtrack")
 app.add_typer(security_app, name="security")
 app.add_typer(health_app, name="health")
