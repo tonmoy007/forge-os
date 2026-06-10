@@ -251,7 +251,9 @@ def test_stats_with_no_records_reports_zero_reduction(tmp_path: Path) -> None:
 # ── Executor integration (P10.18 surgical extension) ───────────────────────
 
 
-def _run_stage_capturing_context(project_root: Path) -> dict[str, object]:
+def _run_stage_capturing_context(
+    project_root: Path, forge_dir: Path | None = None
+) -> dict[str, object]:
     from forge_os.adapters.dummy import DummyAdapter
     from forge_os.agents.executor import run_stage_agent
 
@@ -264,48 +266,99 @@ def _run_stage_capturing_context(project_root: Path) -> dict[str, object]:
         return original_spawn(self, persona, context, tools)
 
     with patch.object(DummyAdapter, "spawn_agent", capturing_spawn):
-        _ = run_stage_agent(project_root, state, "srs")
+        _ = run_stage_agent(project_root, state, "srs", forge_dir=forge_dir)
     return json.loads(captured["context"])
 
 
-def test_stage_context_includes_lazy_context_with_skill_menu(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setattr(Path, "home", lambda: home)
-    _ = write_skill(home / ".forge", "demo-skill", status="installed")
+def test_stage_context_includes_lazy_context_with_skill_menu(tmp_path: Path) -> None:
+    # forge_dir threads cleanly through run_stage_agent -> _stage_context ->
+    # LazyContextBuilder (L001/L005) — no Path.home() monkeypatching needed.
+    forge_dir = tmp_path / "forge-home"
+    _ = write_skill(forge_dir, "demo-skill", status="installed")
     project_root = tmp_path / "proj"
     _ = initialize_project(project_root, project_name="Demo", profile="minimal")
 
-    context = _run_stage_capturing_context(project_root)
+    context = _run_stage_capturing_context(project_root, forge_dir)
 
     lazy = context["lazy_context"]
     assert [entry["name"] for entry in lazy["skills_menu"]] == ["demo-skill"]
     assert lazy["lesson_index"] == []
     assert lazy["token_budget"] == 2000
     assert lazy["within_budget"] is True
+    assert lazy["lazy_tokens"] >= 0
+    assert lazy["trimmed"] == []
+    assert lazy["stage_id"] == "srs"
+    assert lazy["schema_version"] == "0.1"
     assert "error" not in lazy
 
 
-def test_stage_context_survives_broken_forge_dir(
+def test_stage_context_survives_lazy_context_failure(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    home = tmp_path / "home"
-    (home / ".forge").mkdir(parents=True)
-    # `skills` as a regular file makes iterdir() raise NotADirectoryError (OSError).
-    _ = (home / ".forge" / "skills").write_text("not a directory", encoding="utf-8")
-    monkeypatch.setattr(Path, "home", lambda: home)
+    # A LazyContextError from the builder must not abort the spawn: the context
+    # carries an explicit error payload and the warning is logged.
+    forge_dir = tmp_path / "forge-home"
     project_root = tmp_path / "proj"
     _ = initialize_project(project_root, project_name="Demo", profile="minimal")
 
-    with caplog.at_level(logging.WARNING, logger="forge.agents.executor"):
-        context = _run_stage_capturing_context(project_root)
+    with patch.object(
+        LazyContextBuilder, "build", side_effect=LazyContextError("lesson store down")
+    ):
+        with caplog.at_level(logging.WARNING, logger="forge.agents.executor"):
+            context = _run_stage_capturing_context(project_root, forge_dir)
 
     lazy = context["lazy_context"]
     assert lazy["skills_menu"] == []
     assert lazy["lesson_index"] == []
-    assert lazy["error"]
+    assert lazy["error"] == "lesson store down"
     assert "Lazy context build failed" in caplog.text
+
+
+def test_skills_path_being_a_file_degrades_to_empty_menu(tmp_path: Path) -> None:
+    # A stray FILE named `skills` is treated like an absent store (is_dir guard),
+    # not an error.
+    forge_dir = tmp_path / "forge-home"
+    forge_dir.mkdir(parents=True)
+    _ = (forge_dir / "skills").write_text("not a directory", encoding="utf-8")
+
+    builder = LazyContextBuilder(tmp_path / "proj", forge_dir=forge_dir)
+
+    assert builder.skill_menu() == []
+
+
+def test_lesson_index_boundary_confidence_values(tmp_path: Path) -> None:
+    # Strict less-than at the 0.7 threshold: 0.69 in, 0.70 and 0.71 out.
+    builder, project_root, _ = make_builder(tmp_path)
+    store = LessonStore(project_root)
+    just_below = store.add("just below threshold", confidence=0.69, status="approved")
+    _ = store.add("exactly at threshold", confidence=0.70, status="approved")
+    _ = store.add("just above threshold", confidence=0.71, status="approved")
+
+    index = builder.lesson_index()
+
+    assert [entry["id"] for entry in index] == [just_below.id]
+
+
+def test_budget_trim_breaks_confidence_ties_by_id(tmp_path: Path) -> None:
+    # Equal confidences must trim deterministically by lexicographic lesson id.
+    builder, project_root, forge_dir = make_builder(tmp_path)
+    store = LessonStore(project_root)
+    added = [
+        store.add(f"tied lesson number {i} with some padding text", confidence=0.5,
+                  status="approved")
+        for i in range(3)
+    ]
+    _ = write_skill(forge_dir, "any-skill", status="installed")
+
+    bundle = builder.build("srs", token_budget=40)  # tiny: forces trimming
+
+    expected_trim_order = sorted(lesson.id for lesson in added)
+    trimmed_lessons = [
+        item.removeprefix("lesson:") for item in bundle.trimmed if item.startswith("lesson:")
+    ]
+    assert trimmed_lessons == expected_trim_order[: len(trimmed_lessons)]
+    assert trimmed_lessons  # the tiny budget must actually force lesson trims
+    # Re-running is identical (deterministic tie-break).
+    again = builder.build("srs", token_budget=40)
+    assert again.trimmed == bundle.trimmed

@@ -24,7 +24,9 @@ class SkillReader:
 
     def list_records(self) -> list[dict[str, Any]]:
         """Parse every skill YAML record, skipping malformed files with a warning."""
-        if not self.skills_dir.exists():
+        # is_dir (not exists): a stray FILE named `skills` would make iterdir
+        # raise NotADirectoryError; treat it like an absent skills store.
+        if not self.skills_dir.is_dir():
             return []
         records: list[dict[str, Any]] = []
         for path in sorted(self.skills_dir.iterdir()):
