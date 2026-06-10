@@ -128,7 +128,8 @@ class LessonStore:
         lessons = [
             lesson
             for lesson in self.list(status="approved")
-            if lesson.confidence >= min_confidence
+            if not lesson.dormant
+            and lesson.confidence >= min_confidence
             and (lesson.stage_id is None or stage_id is None or lesson.stage_id == stage_id)
         ]
         lessons.sort(key=lambda lesson: (lesson.confidence, lesson.updated_at), reverse=True)
@@ -141,20 +142,46 @@ class LessonStore:
         min_confidence: float = 0.8,
         limit: int = 5,
     ) -> list[dict[str, object]]:
-        return [
-            {
-                "id": lesson.id,
-                "text": lesson.text,
-                "confidence": lesson.confidence,
-                "tags": lesson.tags,
-                "stage_id": lesson.stage_id,
-            }
+        selected_ids = [
+            lesson.id
             for lesson in self.approved_for_context(
                 stage_id=stage_id,
                 min_confidence=min_confidence,
                 limit=limit,
             )
         ]
+        if not selected_ids:
+            return []
+
+        # Injection into agent context counts as usage (FR-ML-003 decay input).
+        document = self.load()
+        timestamp = utc_now()
+        rendered: dict[str, dict[str, object]] = {}
+        for lesson in document.lessons:
+            if lesson.id not in selected_ids:
+                continue
+            lesson.last_used_at = timestamp
+            lesson.use_count += 1
+            rendered[lesson.id] = {
+                "id": lesson.id,
+                "text": lesson.text,
+                "confidence": lesson.confidence,
+                "tags": lesson.tags,
+                "stage_id": lesson.stage_id,
+            }
+        self.save(document)
+        return [rendered[lesson_id] for lesson_id in selected_ids]
+
+    def revive(self, lesson_id: str) -> Lesson:
+        """Clear dormancy so an approved lesson re-enters context selection (FR-DR-003)."""
+
+        document = self.load()
+        lesson = self._require_lesson(document, lesson_id)
+        lesson.dormant = False
+        lesson.dormant_at = None
+        lesson.updated_at = utc_now()
+        self.save(document)
+        return lesson
 
     def _require_lesson(self, document: LessonDocument, lesson_id: str) -> Lesson:
         for lesson in document.lessons:

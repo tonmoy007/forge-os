@@ -27,6 +27,10 @@ class Lesson(BaseModel):
     updated_at: str
     approved_at: str | None = None
     deprecated_at: str | None = None
+    last_used_at: str | None = None
+    use_count: int = 0
+    dormant: bool = False
+    dormant_at: str | None = None
     metadata: dict[str, object] = Field(default_factory=dict)
 
     @field_validator("text")
