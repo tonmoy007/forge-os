@@ -11,10 +11,17 @@ from uuid import uuid4
 
 from forge_os.adapters.base import AgentHandle, BaseKernelAdapter, ToolList
 from forge_os.adapters.claude_code.hooks import ClaudeSettingsHookWriter
-from forge_os.adapters.claude_code.runner import RunResult, StreamEvent, run_claude
+from forge_os.adapters.claude_code.runner import (
+    ClaudeCodeSpawnError,
+    RunResult,
+    StreamEvent,
+    run_claude,
+)
 from forge_os.adapters.claude_code.tool_map import DEFAULT_ABSTRACT_TOOLS, to_claude_tools
 from forge_os.agents.models import AgentDefinition, OutputArtifact
 from forge_os.events.store import EventStore
+from forge_os.project.security_enforcer import SecurityEnforcer
+from forge_os.schemas.security import SecurityDecision
 
 log = logging.getLogger("forge.kernel.claude_code")
 
@@ -44,6 +51,16 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
     When ``hook_command`` is set, the adapter installs PreToolUse/PostToolUse
     hooks into `.claude/settings.json` for the duration of the spawn and tears
     them down afterwards (even if the spawn fails).
+
+    When ``security_enforcer`` is injected (Slice 5), every spawn is validated
+    against the project security profile *before* the subprocess starts
+    (action ``execute_command``, capability ``shell``). A DENIED decision
+    blocks the spawn with ClaudeCodeSpawnError. The gate is fail-closed: if
+    the enforcer itself raises (e.g. the audit log is unwritable), the spawn
+    aborts with that error — never proceeding unaudited. Audit authority is
+    split by concern: `.forge/security-audit.jsonl` (written by the enforcer)
+    is authoritative for security decisions; the event store records only the
+    spawn lifecycle. Default ``None`` means no gate.
     """
 
     adapter_id = "claude-code"
@@ -58,6 +75,7 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
         model: str | None = None,
         event_store: EventStore | None = None,
         hook_command: str | None = None,
+        security_enforcer: SecurityEnforcer | None = None,
     ) -> None:
         self.project_root = Path(project_root)
         self.claude_bin = claude_bin
@@ -65,6 +83,7 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
         self.model = model
         self._event_store = event_store
         self.hook_command = hook_command
+        self._security_enforcer = security_enforcer
 
     def get_default_tools(self) -> ToolList:
         return list(DEFAULT_ABSTRACT_TOOLS)
@@ -80,9 +99,9 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
         Records the spawn lifecycle to the event store (when one is injected)
         and manages the `.claude/settings.json` hook lifecycle (when a
         ``hook_command`` is configured). Raises ClaudeCodeSpawnError on
-        non-zero exit or parse errors, or ClaudeSettingsError if hook-config
-        install fails; either way a terminal ``AdapterSpawnFailed`` event is
-        recorded first.
+        security denial, non-zero exit, or parse errors, or ClaudeSettingsError
+        if hook-config install fails; either way a terminal
+        ``AdapterSpawnFailed`` event is recorded first.
         """
         granted_abstract = self._intersect_tools(tools)
         claude_tools = to_claude_tools(granted_abstract)
@@ -94,6 +113,7 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
         )
 
         try:
+            self._enforce_spawn_allowed(persona)
             with self._hook_context():
                 result = run_claude(
                     prompt,
@@ -132,6 +152,35 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
         if self._event_store is None:
             raise ReplayError("no event store configured for replay")
         return _replay(self._event_store, run_id)
+
+    def _enforce_spawn_allowed(self, persona: AgentDefinition) -> None:
+        """Security gate before the subprocess spawns (P055.13).
+
+        Asks the enforcer to validate executing the claude binary under the
+        ``shell`` capability — the same action/capability pair used by
+        SecurityEnforcer.run_command, so one capability rule governs both
+        paths. The enforcer audits every decision; only DENIED blocks
+        (WARNED/prompt falls through, matching run_command semantics).
+
+        Fail-closed: an exception from the enforcer (audit-log I/O error,
+        enforcer bug) propagates and aborts the spawn — distinguishable from
+        a denial, which always raises ClaudeCodeSpawnError. The caller-facing
+        failure boundary in spawn_agent records the terminal event either way.
+        """
+        if self._security_enforcer is None:
+            return
+        decision = self._security_enforcer.validate_action(
+            {"type": "kernel_adapter", "adapter_id": self.adapter_id},
+            "execute_command",
+            target=self.claude_bin,
+            capability="shell",
+        )
+        if decision == SecurityDecision.DENIED:
+            raise ClaudeCodeSpawnError(
+                -1,
+                f"security profile denied executing `{self.claude_bin}` "
+                f"(capability=shell) for persona {persona.id}",
+            )
 
     def _build_prompt(self, persona: AgentDefinition, context: str) -> str:
         parts = [f"Role: {persona.role}", f"\n{persona.prompt}"]

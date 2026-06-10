@@ -29,7 +29,9 @@ Per D5=B (open-source kernel-first sequencing), tactical work resumed on the **k
 
 **ClaudeCodeAdapter Slice 3 — landed 2026-06-09 (P055.09-10):** `adapters/claude_code/replay.py` — `ClaudeCodeAdapter.replay_session(run_id)` reconstructs the `AgentHandle` by re-projecting the recorded `AdapterSpawnStarted`/`AdapterStreamEvent`/`AdapterSpawnCompleted` stream **without** invoking the subprocess (FR-ES-003 / FR-ES-004 / ADR-005); `ReplayError` for missing/incomplete/failed runs. Slice 2's completed event now records `handle_id` so replay restores the exact handle. 417 tests (host + clean `python:3.12-slim` Docker, latest deps), ruff clean, compileall clean.
 
-**Deferred (next slices, per `plan/PHASE-05.5-claude-code-adapter.md`):** Slice 4 (gate integration + `forge adapter status`, P055.11-12), Slice 5 (security enforcer pre-spawn, P055.13-14), Slice 6 (`forge init --adapter claude-code`, P055.15).
+**ClaudeCodeAdapter Slice 5 — landed 2026-06-10 (P055.13-14):** SecurityEnforcer pre-spawn gate — `ClaudeCodeAdapter` accepts an optional `security_enforcer` (DI, same pattern as `event_store`/`hook_command`); `spawn_agent` validates `execute_command`/`shell` against the security profile *before* the hook context and subprocess. DENIED → `ClaudeCodeSpawnError` + terminal `AdapterSpawnFailed` event; the enforcer writes the audit entry to `.forge/security-audit.jsonl` (authoritative for security decisions; event store records lifecycle only). Gate is **fail-closed**: an enforcer exception aborts the spawn — it never proceeds unaudited. 447 tests (host + clean `python:3.12-slim` Docker, latest deps + GitHub CI), ruff/compileall clean.
+
+**Deferred (next slice, per `plan/PHASE-05.5-claude-code-adapter.md`):** Slice 6 (`forge init --adapter claude-code` bootstrap + `--permission-mode`, P055.15), then the Phase-05.5 exit checklist (incl. real `forge run srs` end-to-end with `ClaudeCodeAdapter` — the kill criterion).
 
 ## Next Phase (gated)
 
