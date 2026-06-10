@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
 from typer.testing import CliRunner
 
 from cli_helpers import isolated_filesystem
+from forge_os.adapters.claude_code.runner import ClaudeCodeSpawnError
 from forge_os.cli.main import app
 
 runner = CliRunner()
@@ -68,6 +70,96 @@ def test_init_refuses_overwrite_without_force() -> None:
         assert first.exit_code == 0, first.output
         assert second.exit_code == 1
         assert "already exists" in second.output
+
+
+# ── Slice 6: forge init --adapter claude-code (P055.15) ─────────────────────
+
+
+def test_init_with_claude_code_adapter_verifies_binary_and_writes_config() -> None:
+    with isolated_filesystem():
+        root = Path.cwd()
+        with patch(
+            "forge_os.cli.main.get_claude_version",
+            return_value="2.1.170 (Claude Code)",
+        ) as version_check:
+            result = runner.invoke(
+                app,
+                ["init", "--name", "Demo", "--adapter", "claude-code",
+                 "--permission-mode", "acceptEdits"],
+            )
+
+        assert result.exit_code == 0, result.output
+        version_check.assert_called_once()
+        assert "2.1.170" in result.output
+
+        config = yaml.safe_load((root / ".forge" / "config.yaml").read_text(encoding="utf-8"))
+        assert config["default_adapter"] == "claude_code"
+        assert config["adapters"]["claude_code"]["enabled"] is True
+        assert config["adapters"]["claude_code"]["permission_mode"] == "acceptEdits"
+        assert config["adapters"]["dummy"]["enabled"] is False  # exactly one default enabled
+
+
+def test_init_claude_code_without_permission_mode_writes_none() -> None:
+    with isolated_filesystem():
+        root = Path.cwd()
+        with patch(
+            "forge_os.cli.main.get_claude_version",
+            return_value="2.1.170 (Claude Code)",
+        ):
+            result = runner.invoke(
+                app, ["init", "--name", "Demo", "--adapter", "claude-code"]
+            )
+
+        assert result.exit_code == 0, result.output
+        config = yaml.safe_load((root / ".forge" / "config.yaml").read_text(encoding="utf-8"))
+        assert config["default_adapter"] == "claude_code"
+        assert "permission_mode" not in config["adapters"]["claude_code"]
+
+
+def test_init_claude_code_fails_when_binary_missing() -> None:
+    with isolated_filesystem():
+        root = Path.cwd()
+        with patch(
+            "forge_os.cli.main.get_claude_version",
+            side_effect=ClaudeCodeSpawnError(-1, "`claude` not found on PATH."),
+        ):
+            result = runner.invoke(
+                app, ["init", "--name", "Demo", "--adapter", "claude-code"]
+            )
+
+        assert result.exit_code == 1
+        assert "claude-code adapter unavailable" in result.output
+        assert not (root / ".forge").exists()  # nothing scaffolded on failure
+
+
+def test_init_rejects_unknown_adapter() -> None:
+    with isolated_filesystem():
+        result = runner.invoke(app, ["init", "--name", "Demo", "--adapter", "bogus"])
+
+        assert result.exit_code == 2
+        assert "Unknown adapter" in result.output
+
+
+def test_init_rejects_permission_mode_without_claude_code() -> None:
+    with isolated_filesystem():
+        result = runner.invoke(
+            app, ["init", "--name", "Demo", "--permission-mode", "acceptEdits"]
+        )
+
+        assert result.exit_code == 2
+        assert "only valid with --adapter claude-code" in result.output
+
+
+def test_init_rejects_invalid_permission_mode() -> None:
+    with isolated_filesystem():
+        result = runner.invoke(
+            app,
+            ["init", "--name", "Demo", "--adapter", "claude-code",
+             "--permission-mode", "yolo"],
+        )
+
+        assert result.exit_code == 2
+        assert "Invalid permission_mode" in result.output
 
 
 def test_status_reads_initialized_project() -> None:

@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import yaml
 
-from forge_os.adapters.registry import adapter_placeholder_config
+from forge_os.adapters.registry import ADAPTER_PRIORITY, adapter_placeholder_config
 from forge_os.project.profiles import build_gate_document, build_stage_document, get_profile_stages
 from forge_os.schemas.config import (
     SUPPORTED_PROFILES,
@@ -44,17 +44,32 @@ def _json_dump(data: object) -> str:
     return json.dumps(data, indent=2, sort_keys=False) + "\n"
 
 
-def _build_config(project_name: str, profile: str) -> ForgeConfig:
+def _build_config(
+    project_name: str,
+    profile: str,
+    default_adapter: str = "dummy",
+    adapter_options: dict[str, object] | None = None,
+) -> ForgeConfig:
     if profile not in SUPPORTED_PROFILES:
         raise ValueError(f"Unsupported profile: {profile}")
+    if default_adapter not in ADAPTER_PRIORITY:
+        choices = ", ".join(ADAPTER_PRIORITY)
+        raise ValueError(f"Unsupported adapter: {default_adapter}. Choose one of: {choices}")
+
+    adapters = adapter_placeholder_config()
+    # Exactly the chosen default is enabled (the placeholder enables dummy).
+    adapters["dummy"]["enabled"] = default_adapter == "dummy"
+    adapters[default_adapter]["enabled"] = True
+    if adapter_options:
+        adapters[default_adapter].update(adapter_options)
 
     validated_profile = cast(Literal["minimal", "standard", "expert"], profile)
     return ForgeConfig(
         schema_version="0.1",
         project=ProjectConfig(name=project_name, root_policy="project_only"),
         profile=validated_profile,
-        default_adapter="dummy",
-        adapters=adapter_placeholder_config(),
+        default_adapter=default_adapter,
+        adapters=adapters,
         security=SecurityConfig(profile="baseline"),
         hooks=HooksConfig(enabled=False),
         features={
@@ -111,9 +126,16 @@ def initialize_project(
     *,
     project_name: str,
     profile: str = "minimal",
+    default_adapter: str = "dummy",
+    adapter_options: dict[str, object] | None = None,
     overwrite: bool = False,
 ) -> Path:
-    """Create a Forge project scaffold under `root`."""
+    """Create a Forge project scaffold under `root`.
+
+    ``default_adapter`` selects the kernel adapter written to config.yaml
+    (P055.15); the chosen adapter is marked ``enabled`` and ``adapter_options``
+    (e.g. ``permission_mode`` for claude_code) are merged into its config.
+    """
 
     if profile not in SUPPORTED_PROFILES:
         raise ValueError(f"Unsupported profile: {profile}")
@@ -123,7 +145,7 @@ def initialize_project(
             f"Forge project already exists at {root}. Use --force to overwrite Phase 01 files."
         )
 
-    config = _build_config(project_name, profile)
+    config = _build_config(project_name, profile, default_adapter, adapter_options)
     state = _build_state(profile)
 
     for directory in (
