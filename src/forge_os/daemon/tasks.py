@@ -42,8 +42,48 @@ def build_scheduled_tasks(
             run=heartbeat,
         )
     ]
+    tasks.extend(_dreamer_tasks(project_root))
     tasks.extend(_observer_tasks(project_root, forge_dir))
     return tasks
+
+
+# FR-BD-003: the daemon runs the Dream cycle on a schedule. Fixed-delay
+# intervals (see TaskRunner semantics): daily digest/decay, weekly re-ingestion.
+DREAMER_DAILY_INTERVAL_SECONDS = 86_400.0
+DREAMER_WEEKLY_INTERVAL_SECONDS = 604_800.0
+
+
+def _dreamer_tasks(project_root: Path) -> list[ScheduledTask]:
+    """Dreamer maintenance tasks (P10.05-09) — propose-only, never destructive."""
+
+    # Imported lazily for symmetry with _observer_tasks and to keep daemon
+    # package import light when tasks are never built.
+    from forge_os.dreamer.decay import apply_decay
+    from forge_os.dreamer.digest import DailyDigestWriter
+    from forge_os.dreamer.tensions import reingest_reflections
+    from forge_os.memory.lessons import LessonStore
+
+    def digest() -> dict[str, Any] | None:
+        written = DailyDigestWriter(project_root).write()
+        return {"written": written is not None, "path": str(written) if written else None}
+
+    def decay() -> dict[str, Any] | None:
+        return dict(apply_decay(LessonStore(project_root)))
+
+    def reingest() -> dict[str, Any] | None:
+        result = reingest_reflections(project_root)
+        # Tension dicts are verbose; the run record only needs counts.
+        return {
+            "reflections_scanned": result["reflections_scanned"],
+            "tensions": len(result["tensions"]),
+            "lessons_proposed": len(result["lessons_proposed"]),
+        }
+
+    return [
+        ScheduledTask("dreamer-digest", DREAMER_DAILY_INTERVAL_SECONDS, digest),
+        ScheduledTask("dreamer-decay", DREAMER_DAILY_INTERVAL_SECONDS, decay),
+        ScheduledTask("dreamer-reingest", DREAMER_WEEKLY_INTERVAL_SECONDS, reingest),
+    ]
 
 
 def _observer_tasks(project_root: Path, forge_dir: Path | None) -> list[ScheduledTask]:

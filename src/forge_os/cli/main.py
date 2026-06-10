@@ -48,6 +48,7 @@ from forge_os.memory.reflections import ReflectionStore, ReflectionStoreError
 from forge_os.project.detect import ProjectNotFoundError, find_project_root
 from forge_os.project.scaffold import ProjectAlreadyInitializedError, initialize_project
 from forge_os.project.status import (
+    daemon_alerts,
     next_action_for,
     read_project_status,
     stale_artifact_count,
@@ -340,6 +341,23 @@ def status(
     table.add_row("Stale artifacts", str(stale_artifact_count(root)))
     table.add_row("Next action", next_action_for(state))
     console.print(table)
+
+    # P10.11 / FR-BD-002: daemon alerts surface in `forge status`.
+    alerts = daemon_alerts()
+    if alerts:
+        alert_table = Table(title="Daemon Alerts (most recent)")
+        alert_table.add_column("Severity", style="bold")
+        alert_table.add_column("Source")
+        alert_table.add_column("Message")
+        alert_table.add_column("At")
+        for alert in alerts:
+            alert_table.add_row(
+                str(alert.get("severity", "")),
+                str(alert.get("source", "")),
+                str(alert.get("message", "")),
+                str(alert.get("created_at", "")),
+            )
+        console.print(alert_table)
 
 
 @app.command()
