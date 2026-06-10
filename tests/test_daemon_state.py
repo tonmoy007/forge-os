@@ -19,14 +19,28 @@ def make_state(pid: int = 1234) -> DaemonState:
     )
 
 
-def make_alert(alert_id: str) -> DaemonAlert:
+def make_alert(alert_id: str, message: str | None = None) -> DaemonAlert:
+    # Distinct message per alert by default: add_alert suppresses consecutive
+    # alerts with identical source/severity/message (anti-spam).
     return DaemonAlert(
         alert_id=alert_id,
         created_at="2026-06-10T00:00:00Z",
         source="test",
         severity="info",
-        message="something happened",
+        message=message if message is not None else f"something happened ({alert_id})",
     )
+
+
+def test_add_alert_suppresses_consecutive_duplicates(tmp_path: Path) -> None:
+    store = DaemonStateStore(forge_dir=tmp_path)
+    store.save(make_state())
+
+    _ = store.add_alert(make_alert("a1", message="registry down"))
+    suppressed = store.add_alert(make_alert("a2", message="registry down"))
+    after_change = store.add_alert(make_alert("a3", message="registry back up"))
+
+    assert [alert.alert_id for alert in suppressed.alerts] == ["a1"]
+    assert [alert.alert_id for alert in after_change.alerts] == ["a1", "a3"]
 
 
 def test_save_then_load_round_trips_state(tmp_path: Path) -> None:
@@ -179,7 +193,7 @@ def test_add_alert_warns_when_cap_drops_oldest(tmp_path, caplog) -> None:
     store.save(state)
     overflow = DaemonAlert(
         alert_id="new", created_at="2026-01-01T00:00:00Z",
-        source="test", severity="info", message="m",
+        source="test", severity="info", message="distinct overflow message",
     )
 
     # Runner tests set propagate=False on the parent "forge.daemon" logger;

@@ -67,9 +67,22 @@ class DaemonStateStore:
         self.state_path.unlink(missing_ok=True)
 
     def add_alert(self, alert: DaemonAlert) -> DaemonState:
-        """Append `alert`, keeping only the most recent `MAX_ALERTS` entries."""
+        """Append `alert`, keeping only the most recent `MAX_ALERTS` entries.
+
+        Consecutive duplicates (same source, severity, and message as the most
+        recent alert) are suppressed — a 60s registry check during an outage
+        would otherwise flood the capped list with identical entries.
+        """
 
         state = self._load_required("add an alert")
+        if state.alerts:
+            last = state.alerts[-1]
+            if (
+                last.source == alert.source
+                and last.severity == alert.severity
+                and last.message == alert.message
+            ):
+                return state
         combined = [*state.alerts, alert]
         if len(combined) > MAX_ALERTS:
             log.warning(

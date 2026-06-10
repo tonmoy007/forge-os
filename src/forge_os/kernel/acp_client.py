@@ -9,11 +9,23 @@ Reference: https://github.com/agentclientprotocol/registry
 from __future__ import annotations
 
 import json
+import select
+import shlex
 import subprocess
 import time
 from collections.abc import Generator
 from dataclasses import dataclass, field
 from typing import Any
+
+
+def agent_command_from_install(agent: dict[str, Any]) -> list[str]:
+    """Split an installed agent record's `install_path` into an argv list.
+
+    Single authority for turning installed.json records into spawn commands
+    (used by the observer monitor and the ACP use cases).
+    """
+
+    return shlex.split(str(agent.get("install_path", "")))
 
 
 @dataclass
@@ -40,8 +52,9 @@ class ACPClient:
         client.stop()
     """
 
-    def __init__(self, agent_command: list[str]) -> None:
+    def __init__(self, agent_command: list[str], *, response_timeout: float = 30.0) -> None:
         self.agent_command = agent_command
+        self.response_timeout = response_timeout
         self.process: subprocess.Popen | None = None
         self.session_id: str | None = None
         self._msg_id: int = 0
@@ -218,8 +231,20 @@ class ACPClient:
         self.process.stdin.flush()
 
     def _receive(self) -> dict[str, Any] | None:
+        """Read one JSON line, bounded by `response_timeout`.
+
+        Without the timeout, a hung agent blocks readline() forever — fatal in
+        the Phase 10 daemon, where one stuck agent would stall every scheduled
+        task in the single-threaded runner (found by the WS-C review).
+        """
         if self.process is None or self.process.stdout is None:
             raise ACPClientError("ACP process not running")
+        readable, _, _ = select.select([self.process.stdout], [], [], self.response_timeout)
+        if not readable:
+            raise ACPClientError(
+                f"Timed out after {self.response_timeout}s waiting for a response "
+                f"from agent {self.agent_command[:1]}"
+            )
         line = self.process.stdout.readline()
         if not line:
             return None
