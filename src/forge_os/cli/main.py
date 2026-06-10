@@ -32,6 +32,7 @@ from forge_os.agents.loader import AgentLoadError, load_contracts, load_personas
 # Phase 08+ sub-apps (imported from commands/ sub-modules)
 from forge_os.cli.commands.acp import acp_app
 from forge_os.cli.commands.backtrack import backtrack_app
+from forge_os.cli.commands.dreamer import dreamer_app
 from forge_os.cli.commands.health import health_app
 from forge_os.cli.commands.security import security_app
 from forge_os.config.loader import ConfigError, load_config
@@ -82,6 +83,7 @@ app.add_typer(backtrack_app, name="backtrack")
 app.add_typer(security_app, name="security")
 app.add_typer(health_app, name="health")
 app.add_typer(acp_app, name="acp")
+app.add_typer(dreamer_app, name="dreamer")
 
 # ─── Explain Topics ────────────────────────────────────────────────────────────
 
