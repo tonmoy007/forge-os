@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import logging.handlers
 import os
 import signal
 import threading
@@ -75,11 +76,15 @@ def main(argv: list[str] | None = None) -> int:
     runner.run_forever(stop_event)
 
     # Graceful stop: keep state (run history, alerts) on disk; liveness is decided
-    # by a pid probe, not by file presence. Stamp a final heartbeat before exit.
-    final_state = store.load()
-    if final_state is not None:
-        final_state.last_heartbeat = utc_now()
-        store.save(final_state)
+    # by a pid probe, not by file presence. Stamp a final heartbeat before exit —
+    # best-effort: a failed final write must not turn a clean stop into an error.
+    try:
+        final_state = store.load()
+        if final_state is not None:
+            final_state.last_heartbeat = utc_now()
+            store.save(final_state)
+    except DaemonStateError:
+        logger.exception("failed to stamp final heartbeat during graceful stop")
     logger.info("daemon stopped: pid=%d", os.getpid())
     _close_logger(logger)
     return 0
@@ -89,7 +94,10 @@ def _configure_logger(log_path: Path) -> logging.Logger:
     logger = logging.getLogger("forge.daemon")
     logger.setLevel(logging.INFO)
     _close_logger(logger)
-    handler = logging.FileHandler(log_path, encoding="utf-8")
+    # Rotation keeps an always-on daemon from growing the log without bound.
+    handler = logging.handlers.RotatingFileHandler(
+        log_path, encoding="utf-8", maxBytes=1_000_000, backupCount=3
+    )
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
     logger.addHandler(handler)
     logger.propagate = False

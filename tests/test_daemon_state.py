@@ -159,3 +159,41 @@ def test_record_task_run_raises_when_no_state_exists(tmp_path: Path) -> None:
 
     with pytest.raises(DaemonStateError, match="No daemon state"):
         store.record_task_run("heartbeat", status="ok")
+
+
+def test_add_alert_warns_when_cap_drops_oldest(tmp_path, caplog) -> None:
+    import logging
+
+    from forge_os.daemon.state import MAX_ALERTS
+    from forge_os.schemas.daemon import DaemonAlert, DaemonState
+
+    store = DaemonStateStore(tmp_path)
+    state = DaemonState(daemon_id="d", pid=1, project_root=".", started_at="2026-01-01T00:00:00Z")
+    state.alerts = [
+        DaemonAlert(
+            alert_id=f"a{i}", created_at="2026-01-01T00:00:00Z",
+            source="test", severity="info", message="m",
+        )
+        for i in range(MAX_ALERTS)
+    ]
+    store.save(state)
+    overflow = DaemonAlert(
+        alert_id="new", created_at="2026-01-01T00:00:00Z",
+        source="test", severity="info", message="m",
+    )
+
+    # Runner tests set propagate=False on the parent "forge.daemon" logger;
+    # restore propagation here so caplog's root handler sees the warning.
+    daemon_logger = logging.getLogger("forge.daemon")
+    previous_propagate = daemon_logger.propagate
+    daemon_logger.propagate = True
+    try:
+        with caplog.at_level(logging.WARNING, logger="forge.daemon.state"):
+            updated = store.add_alert(overflow)
+    finally:
+        daemon_logger.propagate = previous_propagate
+
+    assert len(updated.alerts) == MAX_ALERTS
+    assert updated.alerts[-1].alert_id == "new"
+    assert updated.alerts[0].alert_id == "a1"  # oldest dropped
+    assert any("alert cap reached" in record.message for record in caplog.records)

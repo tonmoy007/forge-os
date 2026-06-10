@@ -160,3 +160,72 @@ def test_daemon_status_when_no_state_file(tmp_path: Path) -> None:
     assert status["stale_state"] is False
     assert status["tasks"] == {}
     assert status["alerts"] == []
+
+
+def test_start_daemon_recovers_from_zombie_child(tmp_path: Path) -> None:
+    # A SIGKILLed daemon child stays a zombie (this test process is its parent
+    # and has not waited on it); zombies still answer the signal-0 probe.
+    # start_daemon must reap before the liveness check or restart is bricked.
+    import signal as _signal
+
+    first = start_daemon(tmp_path, forge_dir=tmp_path)
+    os.kill(first.pid, _signal.SIGKILL)
+    _wait_for_zombie(first.pid)
+
+    second = start_daemon(tmp_path, forge_dir=tmp_path)
+    try:
+        assert second.pid != first.pid
+    finally:
+        _ = stop_daemon(tmp_path)
+
+
+def _wait_for_zombie(pid: int, timeout: float = 5.0) -> None:
+    """Poll /proc until `pid` is a zombie — without reaping it (waitpid would)."""
+
+    import time as _time
+
+    stat_path = Path(f"/proc/{pid}/stat")
+    waited = 0.0
+    while waited < timeout:
+        fields = stat_path.read_text(encoding="ascii").split()
+        if fields[2] == "Z":
+            return
+        _time.sleep(0.02)
+        waited += 0.02
+    raise AssertionError(f"pid {pid} did not become a zombie within {timeout}s")
+
+
+def test_daemon_status_reports_corrupt_state_without_raising(tmp_path: Path) -> None:
+    store = DaemonStateStore(tmp_path)
+    store.daemon_dir.mkdir(parents=True, exist_ok=True)
+    _ = store.state_path.write_text("{not json", encoding="utf-8")
+
+    status = daemon_status(tmp_path)
+
+    assert status["running"] is False
+    assert status["corrupt_state"] is True
+    assert "Corrupt daemon state" in status["error"]
+
+
+def test_fresh_start_lock_blocks_concurrent_start(tmp_path: Path) -> None:
+    store = DaemonStateStore(tmp_path)
+    store.daemon_dir.mkdir(parents=True, exist_ok=True)
+    lock = store.daemon_dir / "start.lock"
+    _ = lock.write_text("", encoding="utf-8")  # fresh mtime
+
+    with pytest.raises(DaemonProcessError, match="in progress"):
+        _ = start_daemon(tmp_path, forge_dir=tmp_path)
+
+
+def test_stale_start_lock_is_recovered(tmp_path: Path) -> None:
+    store = DaemonStateStore(tmp_path)
+    store.daemon_dir.mkdir(parents=True, exist_ok=True)
+    lock = store.daemon_dir / "start.lock"
+    _ = lock.write_text("", encoding="utf-8")
+    os.utime(lock, (0, 0))  # ancient mtime -> crash leftover
+
+    state = start_daemon(tmp_path, forge_dir=tmp_path)
+    try:
+        assert state.pid > 0
+    finally:
+        _ = stop_daemon(tmp_path)

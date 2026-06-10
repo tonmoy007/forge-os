@@ -186,3 +186,42 @@ def test_run_forever_returns_immediately_when_event_already_set() -> None:
     runner.run_forever(stop_event)
 
     assert calls == []
+
+
+def test_raising_on_result_callback_does_not_stop_loop() -> None:
+    runs: list[str] = []
+
+    def boom_callback(name: str, result: object) -> None:
+        raise RuntimeError("callback down")
+
+    tasks = [
+        ScheduledTask("first", 10.0, lambda: runs.append("first") or None),
+        ScheduledTask("second", 10.0, lambda: runs.append("second") or None),
+    ]
+    runner = TaskRunner(tasks, clock=lambda: 0.0, on_result=boom_callback)
+
+    ran = runner.run_pending(now=0.0)
+
+    assert ran == ["first", "second"]  # both ran despite the callback raising
+    assert runs == ["first", "second"]
+
+
+def test_raising_on_error_callback_does_not_stop_loop() -> None:
+    healthy_runs: list[str] = []
+
+    def failing_task() -> None:
+        raise ValueError("task down")
+
+    def boom_error_callback(name: str, exc: Exception) -> None:
+        raise RuntimeError("error callback down")
+
+    tasks = [
+        ScheduledTask("failing", 10.0, failing_task),
+        ScheduledTask("healthy", 10.0, lambda: healthy_runs.append("ok") or None),
+    ]
+    runner = TaskRunner(tasks, clock=lambda: 0.0, on_error=boom_error_callback)
+
+    ran = runner.run_pending(now=0.0)
+
+    assert ran == ["failing", "healthy"]
+    assert healthy_runs == ["ok"]

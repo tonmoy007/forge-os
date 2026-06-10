@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+
+log = logging.getLogger("forge.daemon.scheduler")
 
 
 @dataclass
@@ -42,6 +45,12 @@ class TaskRunner:
 
         Tasks with no recorded run are due immediately, so the first call runs all.
         A failing task is reported via `on_error` and never stops the other tasks.
+        Callbacks are isolated the same way — a raising `on_result`/`on_error`
+        must not kill the daemon loop either.
+
+        Scheduling is fixed-delay, not fixed-rate: the next due time is the
+        moment a task ran plus its interval, so there is no catch-up burst after
+        clock jumps or system sleep — by design for maintenance tasks.
         """
 
         current = self._clock() if now is None else now
@@ -55,12 +64,26 @@ class TaskRunner:
             try:
                 result = task.run()
             except Exception as exc:  # failure isolation: one task must not kill the loop
-                if self._on_error is not None:
-                    self._on_error(task.name, exc)
+                self._notify_error(task.name, exc)
                 continue
-            if self._on_result is not None:
-                self._on_result(task.name, result)
+            self._notify_result(task.name, result)
         return ran
+
+    def _notify_result(self, name: str, result: dict[str, Any] | None) -> None:
+        if self._on_result is None:
+            return
+        try:
+            self._on_result(name, result)
+        except Exception:  # noqa: BLE001 — callback faults must not stop the loop
+            log.exception("on_result callback failed for task %s", name)
+
+    def _notify_error(self, name: str, exc: Exception) -> None:
+        if self._on_error is None:
+            return
+        try:
+            self._on_error(name, exc)
+        except Exception:  # noqa: BLE001 — callback faults must not stop the loop
+            log.exception("on_error callback failed for task %s", name)
 
     def run_forever(self, stop_event: threading.Event, *, tick_seconds: float = 1.0) -> None:
         """Run pending tasks every `tick_seconds` until `stop_event` is set."""

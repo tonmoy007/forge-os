@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from uuid import uuid4
@@ -13,6 +14,8 @@ from forge_os.core.state_manager import utc_now
 from forge_os.schemas.daemon import DaemonAlert, DaemonState, DaemonTaskState
 
 MAX_ALERTS = 100
+
+log = logging.getLogger("forge.daemon.state")
 
 
 class DaemonStateError(RuntimeError):
@@ -67,7 +70,14 @@ class DaemonStateStore:
         """Append `alert`, keeping only the most recent `MAX_ALERTS` entries."""
 
         state = self._load_required("add an alert")
-        state.alerts = [*state.alerts, alert][-MAX_ALERTS:]
+        combined = [*state.alerts, alert]
+        if len(combined) > MAX_ALERTS:
+            log.warning(
+                "alert cap reached: dropping %d oldest alert(s) (cap %d)",
+                len(combined) - MAX_ALERTS,
+                MAX_ALERTS,
+            )
+        state.alerts = combined[-MAX_ALERTS:]
         self.save(state)
         return state
 
