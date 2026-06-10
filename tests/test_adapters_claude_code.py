@@ -35,6 +35,9 @@ from forge_os.adapters.claude_code.tool_map import (
 from forge_os.adapters.registry import AdapterRegistryError, get_adapter_registry
 from forge_os.agents.models import AgentDefinition
 from forge_os.events.store import EventStore
+from forge_os.project.security_audit import SecurityAuditLog
+from forge_os.project.security_enforcer import SecurityEnforcer
+from forge_os.schemas.security import SecurityDecision, SecurityProfile
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 #
@@ -714,3 +717,135 @@ class TestAdapterHookLifecycle:
         assert len(store.read_by_type(EVENT_SPAWN_STARTED)) == 1
         assert len(store.read_by_type(EVENT_SPAWN_FAILED)) == 1
         assert store.read_by_type(EVENT_SPAWN_COMPLETED) == []
+
+
+# ── Slice 5: SecurityEnforcer pre-spawn gate (P055.13-14) ────────────────────
+
+
+def _enforcer_returning(decision: SecurityDecision) -> MagicMock:
+    enforcer = MagicMock(spec=SecurityEnforcer)
+    enforcer.validate_action.return_value = decision
+    return enforcer
+
+
+class TestSecuritySpawnGate:
+    def test_deny_blocks_spawn_before_subprocess(
+        self, project_root: Path, persona: AgentDefinition
+    ) -> None:
+        enforcer = _enforcer_returning(SecurityDecision.DENIED)
+        adapter = ClaudeCodeAdapter(project_root, security_enforcer=enforcer)
+
+        with patch("subprocess.run") as mock_run:
+            with pytest.raises(ClaudeCodeSpawnError, match="security profile denied"):
+                adapter.spawn_agent(persona, "ctx", ["read_file"])
+
+        mock_run.assert_not_called()
+
+    def test_deny_records_terminal_failed_event(
+        self, project_root: Path, persona: AgentDefinition
+    ) -> None:
+        store = EventStore(project_root / "events.db")
+        enforcer = _enforcer_returning(SecurityDecision.DENIED)
+        adapter = ClaudeCodeAdapter(
+            project_root, event_store=store, security_enforcer=enforcer
+        )
+
+        with patch("subprocess.run"):
+            with pytest.raises(ClaudeCodeSpawnError, match="security profile denied"):
+                adapter.spawn_agent(persona, "ctx", ["read_file"])
+
+        assert len(store.read_by_type(EVENT_SPAWN_STARTED)) == 1
+        assert len(store.read_by_type(EVENT_SPAWN_FAILED)) == 1
+        assert store.read_by_type(EVENT_SPAWN_COMPLETED) == []
+
+    def test_enforcer_exception_fails_closed(
+        self, project_root: Path, persona: AgentDefinition
+    ) -> None:
+        # Fail-closed contract: if the enforcer itself raises (audit log
+        # unwritable, enforcer bug), the spawn must abort WITHOUT starting the
+        # subprocess, surface the original error (not a denial), and still
+        # record a terminal Failed event.
+        store = EventStore(project_root / "events.db")
+        enforcer = MagicMock(spec=SecurityEnforcer)
+        enforcer.validate_action.side_effect = OSError("audit log unwritable")
+        adapter = ClaudeCodeAdapter(
+            project_root, event_store=store, security_enforcer=enforcer
+        )
+
+        with patch("subprocess.run") as mock_run:
+            with pytest.raises(OSError, match="audit log unwritable"):
+                adapter.spawn_agent(persona, "ctx", ["read_file"])
+
+        mock_run.assert_not_called()
+        assert len(store.read_by_type(EVENT_SPAWN_STARTED)) == 1
+        assert len(store.read_by_type(EVENT_SPAWN_FAILED)) == 1
+        assert store.read_by_type(EVENT_SPAWN_COMPLETED) == []
+
+    def test_allow_proceeds_and_validates_shell_capability(
+        self, project_root: Path, persona: AgentDefinition
+    ) -> None:
+        enforcer = _enforcer_returning(SecurityDecision.ALLOWED)
+        adapter = ClaudeCodeAdapter(project_root, security_enforcer=enforcer)
+
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)):
+            handle = adapter.spawn_agent(persona, "ctx", ["read_file"])
+
+        assert handle.status == "completed"
+        enforcer.validate_action.assert_called_once()
+        args = enforcer.validate_action.call_args.args
+        kwargs = enforcer.validate_action.call_args.kwargs
+        assert args[0] == {"type": "kernel_adapter", "adapter_id": "claude-code"}
+        assert args[1] == "execute_command"
+        assert kwargs["capability"] == "shell"
+        assert kwargs["target"] == "claude"
+
+    def test_warned_decision_does_not_block(
+        self, project_root: Path, persona: AgentDefinition
+    ) -> None:
+        # PROMPT policy yields WARNED — matches run_command semantics: only
+        # DENIED blocks the spawn.
+        enforcer = _enforcer_returning(SecurityDecision.WARNED)
+        adapter = ClaudeCodeAdapter(project_root, security_enforcer=enforcer)
+
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)):
+            handle = adapter.spawn_agent(persona, "ctx", ["read_file"])
+
+        assert handle.status == "completed"
+
+    def test_real_enforcer_default_deny_writes_audit_entry(
+        self, project_root: Path, persona: AgentDefinition
+    ) -> None:
+        # Integration with the real enforcer + audit log: a default-DENY
+        # profile blocks the spawn and the decision lands in
+        # .forge/security-audit.jsonl (P055.14).
+        audit_log = SecurityAuditLog(project_root)
+        profile = SecurityProfile(profile_id="test-deny-all")
+        enforcer = SecurityEnforcer(project_root, profile, audit_log)
+        adapter = ClaudeCodeAdapter(project_root, security_enforcer=enforcer)
+
+        with patch("subprocess.run") as mock_run:
+            with pytest.raises(ClaudeCodeSpawnError):
+                adapter.spawn_agent(persona, "ctx", ["read_file"])
+
+        mock_run.assert_not_called()
+        entries = audit_log.read_all()
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["action"] == "execute_command"
+        assert entry["capability"] == "shell"
+        assert entry["decision"] == "denied"
+        assert entry["actor"] == {"type": "kernel_adapter", "adapter_id": "claude-code"}
+        assert entry["target"] == "claude"
+        assert entry["audit_id"].startswith("AUD-")
+        assert entry["schema_version"] == "0.1.0"
+        assert entry["timestamp"]  # ISO timestamp set by the schema default
+
+    def test_no_enforcer_means_no_gate(
+        self, project_root: Path, persona: AgentDefinition
+    ) -> None:
+        adapter = ClaudeCodeAdapter(project_root)
+
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)):
+            handle = adapter.spawn_agent(persona, "ctx", ["read_file"])
+
+        assert handle.status == "completed"
