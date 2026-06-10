@@ -1,195 +1,166 @@
 # Forge OS
 
-**Forge OS** is a local-first, lifecycle-aware software engineering CLI that
-orchestrates a deterministic 12-stage SDLC pipeline. It enforces quality gates,
-manages artifact dependencies, learns from past mistakes, and can spawn AI agents
-through a provider-agnostic adapter interface — all from a single `forge`
-command.
+**Forge OS** is a local-first, kernel-agnostic SDLC orchestration CLI. It drives a
+deterministic 12-stage software lifecycle — requirements through release — with
+enforced quality gates, artifact dependency tracking, replayable agent runs, and
+a security-audited adapter boundary that can spawn real AI coding agents. All
+state lives in your project directory; no server, no cloud dependency, no
+telemetry.
 
----
+The orchestration engine owns canonical state. AI providers, humans, and plugins
+are *execution surfaces only* — swap kernels with a config change, never a code
+change.
 
-## Status: Phase 08.5 In Progress
-
-The project is in active development. Phase 01 through Phase 08 are complete.
-Phase 08.5 (Async Migration, CocoIndex Evaluation, Event Store) is the current
-focus — migrating adapters to async, evaluating CocoIndex for incremental indexing,
-and laying groundwork for event-sourced state.
-
----
-
-## What's Working Today
-
-### CLI Commands
-
-| Command | Phase | Description |
-|---------|-------|-------------|
-| `forge init` | 01 | Initialize a Forge project (minimal/standard/expert) |
-| `forge status` | 01 | Show project name, profile, stage, stale artifacts |
-| `forge config show` | 01 | Print validated config as YAML |
-| `forge config validate` | 01 | Validate a config file or project config |
-| `forge explain <topic>` | 01 | Explain a Forge OS concept |
-| `forge stage list` | 02 | List all pipeline stages |
-| `forge stage start <id>` | 02 | Start a stage |
-| `forge stage complete <id>` | 02 | Mark a stage complete |
-| `forge stage advance` | 02 | Complete active stage, start next |
-| `forge stage override <id>` | 02 | Force a stage with an audit reason |
-| `forge events list` | 03 | List lifecycle events |
-| `forge events tail -n N` | 03 | Tail the last N events |
-| `forge gate list` | 04 | List configured gates |
-| `forge gate check <stage>` | 04 | Evaluate gates for a stage |
-| `forge gate report` | 04 | Render a readable gate report |
-| `forge adapter list` | 05 | Show adapter priority and status |
-| `forge agent list` | 05 | List built-in and project personas |
-| `forge agent contracts` | 05 | List output contracts |
-| `forge agent run` | 05 | Run the stage agent |
-| `forge lesson list` | 06 | List project lessons |
-| `forge lesson add <text>` | 06 | Add a manual lesson |
-| `forge lesson approve <id>` | 06 | Approve a pending lesson |
-| `forge lesson deprecate <id>` | 06 | Deprecate a lesson |
-| `forge reflection list` | 06 | List stored reflections |
-| `forge reflection show <id>` | 06 | Show one reflection as YAML |
-| `forge artifact list` | 07 | List registered artifacts |
-| `forge artifact register <path>` | 07 | Register an artifact |
-| `forge artifact refresh` | 07 | Refresh artifact hashes |
-| `forge context select <stage>` | 07 | Deterministic context pruning |
-| `forge backtrack list` | 08 | List backtrack tickets |
-| `forge backtrack plan <id>` | 08 | Show rework plan for a ticket |
-| `forge backtrack approve <id>` | 08 | Approve a ticket for execution |
-| `forge backtrack run <id>` | 08 | Execute rework for a ticket |
-| `forge security audit` | 08 | View security audit log |
-| `forge acp discover` | 08 | Discover ACP agents from registry ✅ |
-| `forge acp list` | 08 | List locally installed ACP agents ✅ |
-| `forge acp install <id>` | 08 | Install an ACP agent ✅ |
-| `forge acp sessions` | 08 | List active ACP sessions ✅ |
-| `forge acp close-session <id>` | 08 | Close an ACP session ✅ |
-| `forge health check` | 09 | Run subsystem health check |
-
-### Completed Phases
-
-- **Phase 01** — CLI scaffold: init, status, config, explain
-- **Phase 02** — State machine: 12-stage pipeline, atomic writes, event logging
-- **Phase 03** — Lifecycle events: normalized JSONL, in-process event bus
-- **Phase 04** — Gates: file/pattern gates, severity, reports, advancement enforcement
-- **Phase 05** — Adapters & agents: KernelAdapter interface, DummyAdapter, 12 stage personas
-- **Phase 06** — Memory: lesson store, reflections, approval workflow
-- **Phase 07** — ADG & context: artifact registry, stale propagation, deterministic pruning
-- **Phase 08** — Backtrack, Security, ACP
-  - Backtrack tickets, rework planner, approval flow ✅
-  - Security profiles, enforcement, audit log ✅
-  - ACPClient, ACPRegistryAdapter, ACPUseCases ✅
-  - ExternalCommand + MetricThreshold gates ✅
-  - IKernelAdapter ACP enhancements ✅
-  - 66 new tests, 133 total ✅
-
-### In Progress
-
-- **Phase 08.5** — Async Migration, CocoIndex, Event Store
-  - **Workstream A**: Async KernelAdapter protocol, DummyAdapter, executor
-  - **Workstream B**: CocoIndex evaluation, incremental indexing pipeline
-  - **Workstream C**: Event Store aggregate schema, dual-write alongside state.json
-
-### Upcoming
-
-- **Phase 08.5** — Async adapter migration, CocoIndex evaluation, Event Store groundwork
-- **Phase 09** — Health checks, global memory, skill mining, ACP agent health
-- **Phase 10** — Daemon, dreamer, lazy context builder
-- **Phase 11** — Channel adapters, OpenClaw, extension/plugin system
-
----
-
-## Architecture
-
-```
-forge_os/
-├── adapters/          # KernelAdapter implementations (DummyAdapter, registry)
-├── agents/            # Personas, output contracts, executor
-├── cli/               # Typer CLI
-│   ├── main.py        # Root app (895 lines)
-│   ├── commands/      # Phase 08+ command modules
-│   │   ├── backtrack.py  # forge backtrack CLI
-│   │   ├── security.py   # forge security CLI
-│   │   ├── health.py     # forge health CLI (Phase 09 scaffold)
-│   │   └── acp.py        # forge acp CLI (scaffolded, backend pending)
-│   └── _shared.py     # Shared console and project resolution
-├── config/            # Config loading and validation
-├── context/           # Artifact registry, ADG, context pruning
-├── core/              # StateManager, atomic writes, transitions
-├── events/            # Event bus, event log
-├── gates/             # Gate coordinator, evaluator, loader (ext/missing)
-├── hooks/             # Hook registry
-├── kernel/            # ACPClient, ACPRegistryAdapter (Phase 08)
-├── memory/            # Lessons, reflections
-├── project/           # Detection, scaffold, profiles,
-│                      # backtrack_registry, rework_planner,
-│                      # security_enforcer, security_audit
-├── schemas/           # Pydantic models (state, config, backtrack, security)
-└── use_cases/         # Business logic (backtrack, security, gates)
+```bash
+pip install -e .
+forge init --adapter claude-code        # verifies the claude binary up front
+forge agent run --stage srs             # real agent writes SRS.md, contract-checked
 ```
 
-Phase 08+ commands live in `cli/commands/<domain>.py` and delegate to the
-`use_cases/` layer. `main.py` handles only parsing, output formatting, and
-error translation.
+---
 
-Phase 08 ACP backend is fully implemented — see `kernel/`,
-`use_cases/acp.py`. Next phase: Phase 08.5 async migration.
+## Why
+
+AI coding agents are powerful but unaccountable: no lifecycle, no gates, no
+audit trail, no way to replay what happened. Forge OS puts a deterministic
+orchestration layer *around* the agent: every spawn is validated against a
+security profile, recorded to an append-only event store, checked against a
+declared output contract, and registered in an artifact dependency graph.
+The kernel (Claude Code, Codex, OpenCode, a human at a terminal…) is a
+pluggable detail.
+
+**Proof point:** `forge agent run --stage srs` with the Claude Code adapter
+runs end-to-end today — persona → subprocess → agent-written `SRS.md` →
+contract validation → artifact registration — with the full lifecycle recorded.
+
+---
+
+## Kernel Adapters
+
+| Adapter | Backend | Status |
+|---------|---------|--------|
+| `dummy` | Deterministic stub (no AI) | ✅ working — default |
+| `claude_code` | `claude` CLI subprocess, stream-json | ✅ working — verified against claude 2.1.x |
+| `claude_raw` | Anthropic Messages API | ✅ implemented (`pip install .[claude-raw]`) |
+| `claude_sdk` | Claude Agent SDK | ✅ implemented (`pip install .[claude-sdk]`) |
+| `codex` | Codex app-server (JSON-RPC) | ✅ implemented (needs `codex` CLI) |
+| `opencode` | OpenCode HTTP + SSE | ✅ implemented (`pip install .[opencode]`) |
+| `human` | Terminal operator | ✅ implemented — zero dependencies |
+| `openclaw`, `local_llm` | — | 🚧 placeholders |
+
+Select a kernel at init (`forge init --adapter claude-code`) or later via
+`default_adapter` in `.forge/config.yaml`. `forge adapter status` shows
+availability, capabilities, and install hints for every adapter.
+
+The `claude_code` adapter additionally supports: per-spawn event-store recording
+with deterministic **replay** (`run_id` → identical handle, no subprocess),
+`.claude/settings.json` hook lifecycle, a fail-closed **SecurityEnforcer**
+pre-spawn gate audited to `.forge/security-audit.jsonl`, `--model`, and
+`--permission-mode`.
 
 ---
 
 ## Quick Start
 
 ```bash
-# Install
-pip install .
+# Install (Python 3.11+)
+pip install -e .
 
-# Initialize a project
-forge init --path ./my-project --profile minimal
-
+# Initialize a project (dummy adapter — works with no AI provider)
+forge init --path ./my-project --name Demo
 cd ./my-project
+forge status
 
-# Walk through the pipeline
+# Or initialize against the real Claude Code kernel
+forge init --path ./my-project --adapter claude-code --permission-mode acceptEdits
+
+# Run the current stage's agent (SRS stage writes SRS.md, checked by contract)
+forge agent run --stage srs
+
+# Walk the pipeline
 forge stage list
-forge stage start spec
-forge stage complete spec
 forge stage advance
 
-# Check gates
-forge gate check build
-forge gate report
+# Inspect everything
+forge adapter status      # adapter availability + capabilities
+forge gate report         # quality gates
+forge events tail -n 20   # lifecycle event log
+forge security audit      # security decisions
+forge health check        # subsystem health
+```
 
-# Run an agent
-forge agent run
+## Command Surface
 
-# View health
-forge health check
+`init` · `status` · `explain` plus sub-apps:
+`config` (show, validate) · `stage` (list, start, complete, advance, override) ·
+`events` (list, tail) · `gate` (list, check, report) · `adapter` (list, status) ·
+`agent` (list, contracts, run) · `lesson` (list, add, approve, deprecate) ·
+`reflection` (list, show) · `artifact` (list, register, refresh) ·
+`context` (select) · `backtrack` (list, plan, approve, run) ·
+`security` (audit) · `health` (check) · `acp` (discover, list, install, sessions, close-session)
+
+---
+
+## Architecture
+
+Strict layering, enforced by pre-merge checks:
+
+```
+cli/  ──▶  use_cases/  ──▶  core/, gates/, project/, context/, memory/,
+                            kernel/, events/, hooks/, agents/, adapters/
+                                            │
+                                            ▼
+                                       schemas/   (pure Pydantic, zero internal imports)
+```
+
+- **`StateManager`** is the only writer of `.forge/state.json` — atomic writes,
+  Pydantic-validated, every mutation appends a lifecycle event. A SQLite event
+  store dual-writes alongside it (WAL mode), growing toward event-sourced
+  authority.
+- **`KernelAdapter`** is the portability boundary: the engine never imports a
+  provider SDK. Async adapters plug into the sync engine through
+  `AsyncToSyncBridge`; ACP-compatible agents plug in additively.
+- **State never advances because an adapter, hook, or plugin failed.**
+
+Deep dives: [`ARCHITECTURE.md`](ARCHITECTURE.md) · [`BUILD_SPEC.md`](BUILD_SPEC.md) ·
+[`SCHEMAS.md`](SCHEMAS.md) · ADRs in [`adr/`](adr/)
+
+## Project Layout (created by `forge init`)
+
+```
+.forge/      config.yaml, state.json, events.jsonl, security-audit.jsonl,
+             lessons.yaml, reflections/, agents/{personas,contracts}/
+pipeline/    stages.yaml, gates.yaml, state.md (human-readable mirror), decisions/, log/
+tasks/       task plans and notes
 ```
 
 ---
 
-## Roadmap
+## Development
 
-See `ROADMAP.md` for detailed release milestones.
+```bash
+pip install -e .[dev]
 
-| Release | Target | Outcome |
-|---------|--------|---------|
-| 0.1 | Phases 01–02, 04 partial | Init, status, stages, basic gates |
-| 0.2 | Phases 02–05 | Full pipeline, events, gates, agents |
-| 0.3 | Phase 05 complete | Provider-agnostic agent execution |
-| 0.4 | Phases 06–07 | Memory, ADG, context pruning |
-| **0.5** | **Phase 08** | **Backtrack, security, ACP — complete** |
-| **0.6** | **Phase 08.5** | **Async migration, CocoIndex, Event Store — current** |
-| 1.0 | Phase 09 | Health checks, global memory, skills |
-| 1.5 | Phase 10 | Daemon, dreamer, lazy context |
-| 2.0 | Phase 11 | Channels, OpenClaw, extensions |
+python -m pytest                      # full suite (476 tests)
+python -m ruff check src tests       # lint (E F I UP B, line length 100)
+python -m compileall src tests       # syntax sweep
+```
 
----
+The reference environment is a clean `python:3.12-slim` container; CI
+(`.github/workflows/ci.yml`) runs the same gate on every PR.
 
 ## Contributing
 
-1. Read `plan/PHASE-XX-*.md` for the phase you want to work on.
-2. Read `BUILD_SPEC.md` for package layout and tooling conventions.
-3. All new CLI commands must be added to `src/forge_os/cli/commands/<domain>.py`
-   and registered with `app.add_typer()` in `main.py`.
-4. Business logic belongs in `use_cases/` — CLI code is thin.
-5. Run `.venv/bin/python -m pytest` before committing (133 tests pass as of Phase 08
-   complete; target for Phase 08.5 is TBD).
-6. See `plan/PHASE-08.5-async-cocoindex.md` for current phase guidance.
+1. Read `plan/CURRENT_PHASE.md` for live status, then the relevant `plan/PHASE-XX-*.md`.
+2. New CLI commands: domain logic in a domain module → use case in `use_cases/` →
+   thin Typer sub-app in `cli/commands/` registered in `main.py`. CLI never
+   imports domain modules directly.
+3. Every module ships with a test file. No feature without tests; no bug fix
+   without a regression test.
+4. One logical task per commit, referencing the phase task ID.
+
+---
+
+## License
+
+[Apache-2.0](LICENSE)
