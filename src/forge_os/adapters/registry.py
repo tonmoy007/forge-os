@@ -104,10 +104,12 @@ def _claude_code_factory(project_root: Path, config: dict[str, object]) -> Kerne
         )
     from forge_os.adapters.claude_code.adapter import ClaudeCodeAdapter
     model = config.get("model")
+    permission_mode = config.get("permission_mode")
     return ClaudeCodeAdapter(
         project_root=project_root,
         claude_bin=claude_bin,
         model=str(model) if model else None,
+        permission_mode=str(permission_mode) if permission_mode else None,
     )
 
 

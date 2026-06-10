@@ -1,62 +1,72 @@
-# tasks/todo.md — Phase 05.5 Slice 5: SecurityEnforcer pre-spawn gate
+# tasks/todo.md — Phase 05.5 Slice 6: `forge init --adapter claude-code` bootstrap
 
-> Slices 1–4 + 1.5 (real-contract fix) merged. CI live (PRs gated). This is Slice 5
-> per the phase-doc deliverables table (P055.13-14).
+> Slices 1–5 + 1.5 merged. CI live (PRs gated). This is Slice 6 — the final slice —
+> per the phase-doc deliverables table (P055.15).
 
-## Slice 5 — SecurityEnforcer check before the subprocess spawns (P055.13-14)
+## Slice 6 — init bootstrap + `--permission-mode` (P055.15)
 
 **SRS traceability:**
-- Security baseline / **FR-NEG** (policy & governance): every privileged action validated against
-  the project security profile with an audit trail (`.forge/security-audit.jsonl`); least
-  privilege + fail-closed on DENY (BUILD_SPEC security rules, ADR least-privilege).
+- **FR-KA-003** (Multiple Implementations — user switches kernels by config change): `forge init
+  --adapter claude-code` writes `default_adapter: claude_code` + `enabled: true` so the project is
+  born selecting the real kernel, with the binary verified up front (fail-early, no broken config).
 
 ### Tasks
 
-- [x] **P055.13** — Inject `security_enforcer: SecurityEnforcer | None = None` into
-  `ClaudeCodeAdapter` (DI, same pattern as `event_store`/`hook_command`). In `spawn_agent`,
-  before the hook context / `run_claude`, call
-  `validate_action(actor, "execute_command", target=claude_bin, capability="shell")` —
-  the same action/capability pair as `SecurityEnforcer.run_command`, so one capability rule
-  governs both paths. On `DENIED`: raise `ClaudeCodeSpawnError`; the existing
-  `except` boundary records the terminal `AdapterSpawnFailed` event (best-effort, Slice 2
-  pattern). Enforcer audits every decision itself. `WARNED` (prompt policy) does not block —
-  matches `run_command` semantics. Default `None` = no gate (existing tests stay green).
-- [x] **P055.14** — Tests (`tests/test_adapters_claude_code.py::TestSecuritySpawnGate`):
-  deny blocks spawn with `subprocess.run` NOT called; deny records Started→Failed (no
-  Completed) in the event store; allow proceeds and validates action/capability args;
-  WARNED does not block; real `SecurityEnforcer` + default-DENY profile writes the audit
-  entry to `.forge/security-audit.jsonl`; no enforcer = no gate.
+- [x] **P055.15a** — `runner.py`: `get_claude_version()` (subprocess `claude --version`, raises
+  `ClaudeCodeSpawnError` with install hint if missing/failing) + `CLAUDE_PERMISSION_MODES`
+  (verified against claude 2.1.170 `--help`: acceptEdits, auto, bypassPermissions, default,
+  dontAsk, plan) + `run_claude(permission_mode=...)` → `--permission-mode` flag.
+- [x] **P055.15b** — `ClaudeCodeAdapter(permission_mode=...)` (validates against
+  `CLAUDE_PERMISSION_MODES`, threads to `run_claude`); `_claude_code_factory` reads
+  `permission_mode` from adapter config.
+- [x] **P055.15c** — `scaffold.py`: `initialize_project(default_adapter=..., adapter_options=...)`
+  validates against `ADAPTER_PRIORITY`, marks the chosen adapter `enabled: true`, merges options.
+- [x] **P055.15d** — `cli/main.py init`: `--adapter` (kebab→snake normalize) + `--permission-mode`
+  flags; claude-code path verifies the binary via `get_claude_version()` BEFORE scaffolding and
+  prints the version; clean errors (exit 2) for unknown adapter / mode misuse, exit 1 for missing
+  binary.
 
 ### Gate answers
-1. **SRS:** security baseline / FR-NEG (policy & governance, audit trail, least privilege).
-2. **Files:** modify `adapters/claude_code/adapter.py`; extend `tests/test_adapters_claude_code.py`.
-3. **Verify:** 6 new tests above; full suite (446) + ruff + compileall on host, clean
-   `python:3.12-slim` Docker (L006), GitHub CI on the PR.
-4. **What could break:** default `security_enforcer=None` keeps every existing call site and
-   test unchanged; the gate runs inside the existing failure boundary, so event-stream
-   invariants (terminal event after Started) hold. The gate fires before `_hook_context()`,
-   so a denied spawn never touches `.claude/settings.json`.
+1. **SRS:** FR-KA-003 (config-driven kernel switch at project birth).
+2. **Files:** modify `adapters/claude_code/runner.py`, `adapters/claude_code/adapter.py`,
+   `adapters/registry.py`, `project/scaffold.py`, `cli/main.py`; extend
+   `tests/test_adapters_claude_code.py`, `tests/test_cli_phase01.py`.
+3. **Verify:** 14 new tests (runner flag/version-check, adapter validation/threading, factory,
+   6 CLI init paths); manual smoke with real claude 2.1.170: init writes config, bad adapter
+   rejected, `create_adapter_from_config` on the generated config returns
+   `ClaudeCodeAdapter(permission_mode="plan")`. Full suite in clean Docker (L006) + CI.
+4. **What could break:** `initialize_project` defaults (`default_adapter="dummy"`,
+   `adapter_options=None`) keep every existing caller byte-identical (dummy placeholder already
+   carried `enabled: true`). `run_claude`/adapter default `permission_mode=None` → no flag →
+   identical commands for existing flows. Binary check runs before any file is written, so a
+   failed init leaves no partial scaffold.
 
 ## Review section
 
 ### Validation
-- Host: 447 passed, ruff clean, compileall clean.
-- Clean Docker (`python:3.12-slim`, latest deps): 447 passed + ruff clean (re-run after review fixes).
-- GitHub CI: gates the PR.
+- Host: 471 passed, ruff clean, compileall clean.
+- Clean Docker (`python:3.12-slim`, latest deps): re-run after review fixes.
+- Manual smoke (real claude 2.1.170): init verifies binary + writes config; bad adapter rejected;
+  `create_adapter_from_config` on the generated config returns `ClaudeCodeAdapter(permission_mode="plan")`.
 
-### Adversarial review (4 dimensions × per-finding verification): 7 confirmed / 10 raw, 3 refuted
-- **Enforcer-exception semantics (high) + audit-failure robustness (medium)** — the gate is
-  **fail-closed by design**: an enforcer exception (audit log unwritable, enforcer bug) aborts the
-  spawn before the subprocess, surfaces the *original* error (distinguishable from a denial, which
-  is always `ClaudeCodeSpawnError` "security profile denied"), and still records the terminal
-  Failed event. We deliberately did NOT make `SecurityEnforcer.validate_action` swallow audit
-  errors — a silently lossy security audit trail violates fail-loud and is out of slice scope.
-  Documented the contract in both docstrings + added `test_enforcer_exception_fails_closed`.
-- **Audit fragmentation (medium)** — intentional split of concerns, now documented in the class
-  docstring: `.forge/security-audit.jsonl` is authoritative for security decisions; the event
-  store records only spawn lifecycle.
-- **Test gaps (high/medium/medium/low)** — all fixed: fail-closed test added; full actor-dict
-  positional-arg assertion; audit-entry assertions deepened (actor, target, audit_id,
-  schema_version, timestamp); `match="security profile denied"` on the second deny test.
-- Refuted (correctly): cross-test event-store pollution (tmp_path isolation), FAILED-decision
-  gap (`validate_action` never returns FAILED — unreachable), `.forge` dir pollution (tmp_path).
+### Adversarial review (4 dimensions × per-finding verification): 11 confirmed / 21 raw, 10 refuted
+**Fixed (8):**
+- Scaffold left dummy `enabled: true` alongside the chosen adapter → exactly one default enabled now
+  (`adapters["dummy"]["enabled"] = default_adapter == "dummy"`), asserted in the CLI test.
+- `get_claude_version` timeout message now includes the duration; empty `--version` output now
+  raises instead of "verifying" an empty string. Both paths tested.
+- permission-mode validation was duplicated CLI↔adapter → extracted a single domain authority
+  `runner.validate_permission_mode()`; adapter `__init__` and `forge init` both call it.
+- Test gaps: all 6 modes parametrized; gold contract-set test (forces deliberate re-capture if
+  claude changes choices, L007); factory rejects invalid mode.
+
+**Rejected (3, with reasons):**
+- "Missing init use case layer" — init→scaffold direct call is a documented pre-existing pattern;
+  extracting `use_cases/init.py` is a refactor for its own PR (refactor ≠ feature commit), deferred.
+- "adapter_options unvalidated at scaffold layer" — internal caller (CLI) validates at the
+  boundary; re-validating internal paths is explicitly discouraged (defensive-at-boundaries-only).
+- "kebab→snake untested" — factually wrong; the CLI test passes `--adapter claude-code` and
+  asserts `default_adapter == "claude_code"`.
+
+**Refuted by verifiers (10):** incl. partial-scaffold claim (binary check runs before any file
+write), CLI-imports-adapters layer claim (adapters is not in the documented forbidden list).

@@ -20,6 +20,11 @@ from rich.console import Console
 from rich.table import Table
 
 from forge_os import __version__
+from forge_os.adapters.claude_code.runner import (
+    ClaudeCodeSpawnError,
+    get_claude_version,
+    validate_permission_mode,
+)
 from forge_os.adapters.registry import ADAPTER_CLASS_NAMES, ADAPTER_PRIORITY
 from forge_os.agents.executor import AgentExecutionError, run_stage_agent
 from forge_os.agents.loader import AgentLoadError, load_contracts, load_personas
@@ -209,6 +214,20 @@ def init(
         str,
         typer.Option("--profile", help="Initial profile: minimal, standard, or expert."),
     ] = "minimal",
+    adapter: Annotated[
+        str,
+        typer.Option(
+            "--adapter",
+            help="Default kernel adapter to enable (e.g. claude-code). Defaults to dummy.",
+        ),
+    ] = "dummy",
+    permission_mode: Annotated[
+        str | None,
+        typer.Option(
+            "--permission-mode",
+            help="Claude Code permission mode (claude-code adapter only).",
+        ),
+    ] = None,
     force: Annotated[
         bool,
         typer.Option("--force", help="Overwrite scaffold files if they already exist."),
@@ -234,8 +253,43 @@ def init(
         )
         raise typer.Exit(code=2)
 
+    # CLI accepts kebab-case (claude-code); config/registry use snake_case.
+    adapter_id = adapter.replace("-", "_")
+    if adapter_id not in ADAPTER_PRIORITY:
+        choices = ", ".join(aid.replace("_", "-") for aid in ADAPTER_PRIORITY)
+        console.print(f"[red]Unknown adapter `{adapter}`.[/red] Choose one of: {choices}.")
+        raise typer.Exit(code=2)
+
+    if permission_mode is not None and adapter_id != "claude_code":
+        console.print("[red]--permission-mode is only valid with --adapter claude-code.[/red]")
+        raise typer.Exit(code=2)
     try:
-        initialize_project(root, project_name=project_name, profile=profile, overwrite=force)
+        validate_permission_mode(permission_mode)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+
+    adapter_options: dict[str, object] = {}
+    if adapter_id == "claude_code":
+        # P055.15: verify the binary works before writing it into the config.
+        try:
+            version = get_claude_version()
+        except ClaudeCodeSpawnError as exc:
+            console.print(f"[red]claude-code adapter unavailable:[/red] {exc}")
+            raise typer.Exit(code=1) from exc
+        console.print(f"Verified claude binary: [cyan]{version}[/cyan]")
+        if permission_mode is not None:
+            adapter_options["permission_mode"] = permission_mode
+
+    try:
+        initialize_project(
+            root,
+            project_name=project_name,
+            profile=profile,
+            default_adapter=adapter_id,
+            adapter_options=adapter_options or None,
+            overwrite=force,
+        )
     except ProjectAlreadyInitializedError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -244,6 +298,8 @@ def init(
         raise typer.Exit(code=1) from exc
 
     console.print(f"[green]Initialized Forge project[/green] at {root}")
+    if adapter_id != "dummy":
+        console.print(f"Default adapter: [cyan]{adapter_id}[/cyan]")
     console.print("Next: run `forge status` from the project directory.")
 
 

@@ -27,6 +27,25 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+# `claude --permission-mode` choices, verified against claude 2.1.170 --help.
+CLAUDE_PERMISSION_MODES = frozenset(
+    {"acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan"}
+)
+
+
+def validate_permission_mode(permission_mode: str | None) -> None:
+    """Raise ValueError unless ``permission_mode`` is None or a known choice.
+
+    Single validation authority for the permission-mode constraint — used by
+    ClaudeCodeAdapter.__init__ (config boundary) and `forge init` (CLI
+    boundary) so the rule cannot diverge.
+    """
+    if permission_mode is not None and permission_mode not in CLAUDE_PERMISSION_MODES:
+        choices = ", ".join(sorted(CLAUDE_PERMISSION_MODES))
+        raise ValueError(
+            f"Invalid permission_mode `{permission_mode}`. Choose one of: {choices}."
+        )
+
 
 class ClaudeCodeSpawnError(RuntimeError):
     """Raised when the claude subprocess exits non-zero or reports an error."""
@@ -144,6 +163,41 @@ def _error_summary(result: RunResult) -> str:
     return "no result line in stream"
 
 
+def get_claude_version(claude_bin: str = "claude", *, timeout: int = 10) -> str:
+    """Return the claude CLI version string (e.g. ``2.1.170 (Claude Code)``).
+
+    Used by `forge init --adapter claude-code` to verify the binary works
+    before writing it into the project config. Raises ClaudeCodeSpawnError if
+    the binary is missing or the version check fails.
+    """
+    try:
+        proc = subprocess.run(
+            [claude_bin, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except FileNotFoundError as exc:
+        raise ClaudeCodeSpawnError(
+            -1,
+            f"`{claude_bin}` not found on PATH. "
+            "Install Claude Code: https://docs.claude.com/en/docs/claude-code",
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ClaudeCodeSpawnError(
+            -1, f"`{claude_bin} --version` timed out after {timeout}s"
+        ) from exc
+
+    if proc.returncode != 0:
+        raise ClaudeCodeSpawnError(proc.returncode, proc.stderr or "version check failed")
+    version = proc.stdout.strip()
+    if not version:
+        raise ClaudeCodeSpawnError(
+            proc.returncode, f"`{claude_bin} --version` produced no output"
+        )
+    return version
+
+
 def run_claude(
     prompt: str,
     *,
@@ -152,6 +206,7 @@ def run_claude(
     timeout: int = 120,
     claude_bin: str = "claude",
     model: str | None = None,
+    permission_mode: str | None = None,
     on_event: Callable[[StreamEvent], None] | None = None,
 ) -> RunResult:
     """Invoke the claude CLI and return a parsed RunResult.
@@ -175,6 +230,8 @@ def run_claude(
         cmd += ["--allowedTools", ",".join(allowed_tools)]
     if model:
         cmd += ["--model", model]
+    if permission_mode:
+        cmd += ["--permission-mode", permission_mode]
 
     try:
         proc = subprocess.run(

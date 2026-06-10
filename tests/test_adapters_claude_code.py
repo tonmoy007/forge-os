@@ -22,9 +22,11 @@ from forge_os.adapters.claude_code.adapter import (
     EVENT_STREAM,
 )
 from forge_os.adapters.claude_code.runner import (
+    CLAUDE_PERMISSION_MODES,
     RunResult,
     StreamEvent,
     _parse_stream_lines,
+    get_claude_version,
     run_claude,
 )
 from forge_os.adapters.claude_code.tool_map import (
@@ -287,6 +289,98 @@ class TestRunnerModel:
         with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)) as mock_run:
             run_claude("p", allowed_tools=["Read"], cwd=Path("."))
         assert "--model" not in mock_run.call_args[0][0]
+
+
+# ── Slice 6: --permission-mode flag + version check (P055.15) ────────────────
+
+
+class TestRunnerPermissionMode:
+    def test_permission_mode_adds_flag(self) -> None:
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)) as mock_run:
+            run_claude(
+                "p", allowed_tools=["Read"], cwd=Path("."), permission_mode="acceptEdits"
+            )
+        cmd = mock_run.call_args[0][0]
+        assert cmd[cmd.index("--permission-mode") + 1] == "acceptEdits"
+
+    def test_no_permission_mode_means_no_flag(self) -> None:
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)) as mock_run:
+            run_claude("p", allowed_tools=["Read"], cwd=Path("."))
+        assert "--permission-mode" not in mock_run.call_args[0][0]
+
+    def test_adapter_threads_permission_mode(
+        self, project_root: Path, persona: AgentDefinition
+    ) -> None:
+        adapter = ClaudeCodeAdapter(project_root, permission_mode="plan")
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)) as mock_run:
+            adapter.spawn_agent(persona, "ctx", ["read_file"])
+        cmd = mock_run.call_args[0][0]
+        assert cmd[cmd.index("--permission-mode") + 1] == "plan"
+
+    def test_adapter_rejects_invalid_permission_mode(self, project_root: Path) -> None:
+        with pytest.raises(ValueError, match="Invalid permission_mode"):
+            ClaudeCodeAdapter(project_root, permission_mode="yolo")
+
+    @pytest.mark.parametrize(
+        "mode", sorted(CLAUDE_PERMISSION_MODES)
+    )
+    def test_adapter_accepts_every_documented_mode(
+        self, project_root: Path, mode: str
+    ) -> None:
+        assert ClaudeCodeAdapter(project_root, permission_mode=mode).permission_mode == mode
+
+    def test_permission_mode_contract_matches_claude_2_1_170(self) -> None:
+        # Gold contract captured from `claude 2.1.170 --help` (L007): if the
+        # CLI adds/removes modes, this test forces a deliberate re-capture.
+        assert CLAUDE_PERMISSION_MODES == {
+            "acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan"
+        }
+
+    def test_factory_threads_permission_mode(self, tmp_path: Path) -> None:
+        registry = get_adapter_registry()
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            adapter = registry.create(
+                "claude_code", tmp_path, {"permission_mode": "acceptEdits"}
+            )
+        assert adapter.permission_mode == "acceptEdits"
+
+    def test_factory_rejects_invalid_permission_mode(self, tmp_path: Path) -> None:
+        registry = get_adapter_registry()
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with pytest.raises(ValueError, match="Invalid permission_mode"):
+                registry.create("claude_code", tmp_path, {"permission_mode": "yolo"})
+
+
+class TestGetClaudeVersion:
+    def test_returns_stripped_version(self) -> None:
+        proc = _make_proc(stdout="2.1.170 (Claude Code)\n")
+        with patch("subprocess.run", return_value=proc) as mock_run:
+            version = get_claude_version()
+        assert version == "2.1.170 (Claude Code)"
+        assert mock_run.call_args[0][0] == ["claude", "--version"]
+
+    def test_missing_binary_raises_with_install_hint(self) -> None:
+        with patch("subprocess.run", side_effect=FileNotFoundError()):
+            with pytest.raises(ClaudeCodeSpawnError, match="not found on PATH"):
+                get_claude_version("claude")
+
+    def test_nonzero_exit_raises(self) -> None:
+        proc = _make_proc(stderr="boom", returncode=3)
+        with patch("subprocess.run", return_value=proc):
+            with pytest.raises(ClaudeCodeSpawnError, match="boom"):
+                get_claude_version()
+
+    def test_timeout_raises_with_duration(self) -> None:
+        timeout_exc = subprocess.TimeoutExpired(cmd=["claude", "--version"], timeout=10)
+        with patch("subprocess.run", side_effect=timeout_exc):
+            with pytest.raises(ClaudeCodeSpawnError, match="timed out after 10s"):
+                get_claude_version()
+
+    def test_empty_version_output_raises(self) -> None:
+        proc = _make_proc(stdout="  \n")
+        with patch("subprocess.run", return_value=proc):
+            with pytest.raises(ClaudeCodeSpawnError, match="produced no output"):
+                get_claude_version()
 
 
 # ── Adapter instantiation tests ───────────────────────────────────────────────

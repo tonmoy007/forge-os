@@ -16,6 +16,7 @@ from forge_os.adapters.claude_code.runner import (
     RunResult,
     StreamEvent,
     run_claude,
+    validate_permission_mode,
 )
 from forge_os.adapters.claude_code.tool_map import DEFAULT_ABSTRACT_TOOLS, to_claude_tools
 from forge_os.agents.models import AgentDefinition, OutputArtifact
@@ -73,14 +74,17 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
         claude_bin: str = "claude",
         timeout: int = 120,
         model: str | None = None,
+        permission_mode: str | None = None,
         event_store: EventStore | None = None,
         hook_command: str | None = None,
         security_enforcer: SecurityEnforcer | None = None,
     ) -> None:
+        validate_permission_mode(permission_mode)
         self.project_root = Path(project_root)
         self.claude_bin = claude_bin
         self.timeout = timeout
         self.model = model
+        self.permission_mode = permission_mode
         self._event_store = event_store
         self.hook_command = hook_command
         self._security_enforcer = security_enforcer
@@ -122,6 +126,7 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
                     timeout=self.timeout,
                     claude_bin=self.claude_bin,
                     model=self.model,
+                    permission_mode=self.permission_mode,
                     on_event=self._stream_recorder(run_id),
                 )
         except Exception as exc:
