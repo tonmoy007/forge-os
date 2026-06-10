@@ -70,3 +70,60 @@
 
 **Refuted by verifiers (10):** incl. partial-scaffold claim (binary check runs before any file
 write), CLI-imports-adapters layer claim (adapters is not in the documented forbidden list).
+
+---
+
+# Phase 05.5 exit checklist — kill-criterion run + integration fixes
+
+**SRS traceability:** FR-KA-001 (spawn produces real artifacts), FR-KA-003 (kernel-agnostic
+executor seam) — the phase-doc kill criterion: a real `forge agent run` end-to-end
+(persona → subprocess → artifact → contract pass).
+
+### What the real run exposed (3 bugs DummyAdapter masked)
+
+- [x] **E2E-1** — `extract_text_outputs` emitted `OutputArtifact(path="")`; the ArtifactRegistry
+  correctly rejects empty paths, aborting the run AFTER the paid spawn. Fix: `extract_outputs(result,
+  project_root)` derives file artifacts from Write/Edit/NotebookEdit tool uses (relativized,
+  outside-project skipped, deduped); transcript text moved to `metadata["final_text"]`. Replay
+  derives identically (`replay_session` gained `project_root`).
+- [x] **E2E-2** — `_stage_context` omitted the contract's `required_outputs`, so a real kernel
+  never learned its deliverables. Fix: context now carries path/type/description/blocking per
+  requirement (sync + async executor paths). Regression test captures the context.
+- [x] **E2E-3** — `claude -p` opened a conversation ("What are you building?", 0 tool uses, $0.024
+  wasted) instead of producing artifacts. Fix: `_build_prompt` appends a claude-specific
+  execution directive (non-interactive batch run; create `required_outputs` at exact paths;
+  record assumptions instead of asking).
+
+### Gate answers
+1. **SRS:** FR-KA-001/FR-KA-003 + phase-doc kill criterion.
+2. **Files:** `adapters/claude_code/adapter.py`, `adapters/claude_code/replay.py`,
+   `agents/executor.py`; tests in 3 files.
+3. **Verify:** 475 tests green (host + Docker); REAL e2e: `forge agent run --stage srs` with
+   claude_code/haiku → SRS.md written by the agent (6 tool uses, 73s, $0.08), contract passed,
+   outputs `['SRS.md']` registered, run record persisted.
+4. **What could break:** outputs derivation changed for claude_code only (dummy untouched);
+   replay stays output-identical to live spawn by construction; pre-fix recorded streams replay
+   fine (outputs derived from the same stream events, just a different projection).
+
+### Adversarial review (4 dimensions × per-finding verification): 7 confirmed / 12 raw, 5 refuted
+**Fixed (5):**
+- Out-of-project writes were skipped silently → `log.warning` now names the tool and path.
+- Generic-vs-claude-specific directive boundary → executor now signals `execution_mode: "batch"`
+  in the stage context (any adapter can honor it); the claude-phrased directive stays in the
+  adapter, which is correct since `claude -p` is always batch.
+- `final_text`-in-metadata rationale documented at the metadata seam.
+- NotebookEdit added to the output-extraction test; executor→ClaudeCodeAdapter integration test
+  asserts the real `-p` prompt names `SRS.md` + the batch directive.
+
+**Rejected (2, with reasons):**
+- "Replay of old runs breaks on missing `final_text`" — no production code bracket-accesses it;
+  the only test that asserts it replays a new-format run; replay's contract (ADR-005) is the
+  *current projection over recorded events* with metadata recorded verbatim — not byte-identical
+  historical handles.
+- "Fragile substring assertions" — the directive is prose; substring is the pragmatic check, and
+  the structural check now exists via the `execution_mode` context assertion.
+
+### Validation (final)
+- Host: 476 passed, ruff clean, compileall clean. Docker re-run after review fixes.
+- REAL kill-criterion e2e (pre-review-fix build): SRS.md written by the agent, contract passed,
+  outputs registered. Integration test now pins the executor→adapter prompt contract.

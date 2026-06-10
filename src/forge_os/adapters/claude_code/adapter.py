@@ -156,7 +156,7 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
 
         if self._event_store is None:
             raise ReplayError("no event store configured for replay")
-        return _replay(self._event_store, run_id)
+        return _replay(self._event_store, run_id, self.project_root)
 
     def _enforce_spawn_allowed(self, persona: AgentDefinition) -> None:
         """Security gate before the subprocess spawns (P055.13).
@@ -188,9 +188,20 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
             )
 
     def _build_prompt(self, persona: AgentDefinition, context: str) -> str:
+        # The execution directive is claude-specific: `-p` runs are batch mode
+        # with nobody to answer questions, but the model defaults to opening a
+        # conversation (kill-criterion run produced zero tool uses and a
+        # "What are you building?" reply instead of the contract outputs).
         parts = [f"Role: {persona.role}", f"\n{persona.prompt}"]
         if context:
             parts.append(f"\n\nContext:\n{context}")
+        parts.append(
+            "\n\nExecution directive: this is a non-interactive batch run — no "
+            "user can answer questions. Create every file listed under "
+            "`required_outputs` in the context now, at the exact relative path "
+            "given, using your file tools. If information is missing, write the "
+            "artifact anyway and record your assumptions inside it."
+        )
         return "\n".join(parts)
 
     def _hook_context(self) -> AbstractContextManager[Any]:
@@ -215,7 +226,7 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
             persona_id=persona.id,
             stage_id=persona.stage_ids[0] if persona.stage_ids else None,
             status="completed",
-            outputs=extract_text_outputs(result),
+            outputs=extract_outputs(result, self.project_root),
             metadata=self._build_metadata(persona, granted_tools, result, run_id),
         )
 
@@ -233,6 +244,9 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
             "tool_use_count": len(result.tool_uses),
             "event_count": len(result.events),
             "text_length": len(result.text_output),
+            # Transcript text lives here, not in outputs: OutputArtifact
+            # requires a registrable project-relative path and text has none.
+            "final_text": result.text_output[:500],
             "returncode": result.returncode,
             "usage": result.usage,
             "total_cost_usd": result.total_cost_usd,
@@ -323,16 +337,53 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
         )
 
 
-def extract_text_outputs(result: RunResult) -> list[OutputArtifact]:
-    """Project a run's text transcript into output artifacts.
+# Claude tools whose `file_path` input creates/modifies a project file.
+_FILE_WRITING_TOOLS = frozenset({"Write", "Edit", "NotebookEdit"})
+
+
+def extract_outputs(result: RunResult, project_root: Path) -> list[OutputArtifact]:
+    """Project a run's file-writing tool uses into output artifacts.
+
+    Every artifact must carry a real, project-relative path: the executor
+    registers each output in the ArtifactRegistry, which rejects empty or
+    out-of-project paths. (The Phase 05.5 kill criterion exposed this — a
+    text pseudo-artifact with ``path=""`` aborted the run *after* a paid
+    spawn.) The final transcript text lives in
+    ``AgentHandle.metadata["final_text"]`` instead. Paths outside the
+    project root are skipped — they are not registrable project artifacts.
 
     Shared by live spawn (`_build_handle`) and replay so both derive outputs
     identically from a RunResult.
     """
-    text = result.text_output
-    if not text:
-        return []
-    return [OutputArtifact(path="", kind="text", description=text[:500])]
+    root = project_root.resolve()
+    seen: set[str] = set()
+    artifacts: list[OutputArtifact] = []
+    for block in result.tool_uses:
+        name = block.get("name")
+        if name not in _FILE_WRITING_TOOLS:
+            continue
+        tool_input = block.get("input")
+        raw_path = tool_input.get("file_path") if isinstance(tool_input, dict) else None
+        if not isinstance(raw_path, str) or not raw_path:
+            continue
+        candidate = Path(raw_path)
+        resolved = candidate.resolve() if candidate.is_absolute() else (root / candidate).resolve()
+        try:
+            relative = resolved.relative_to(root).as_posix()
+        except ValueError:
+            # Not silently swallowed: an agent writing outside the project is
+            # something operators must be able to see.
+            log.warning(
+                "skipping out-of-project output from %s tool: %s", name, raw_path
+            )
+            continue
+        if relative in seen:
+            continue
+        seen.add(relative)
+        artifacts.append(
+            OutputArtifact(path=relative, kind="file", description=f"Written via {name} tool")
+        )
+    return artifacts
 
 
 def _new_run_id() -> str:

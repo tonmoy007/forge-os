@@ -126,8 +126,11 @@ class TestReplaySuccess:
     ) -> None:
         original = _record_a_spawn(adapter, persona)
         replayed = adapter.replay_session(original.metadata["run_id"])
-        assert len(replayed.outputs) == 1
-        assert "Done. Produced SRS.md." in replayed.outputs[0].description
+        # Output derivation is identical to the live spawn (file artifacts from
+        # Write-tool uses; the fixture only Reads, so both are empty) and the
+        # transcript text survives via recorded metadata.
+        assert replayed.outputs == original.outputs
+        assert "Done. Produced SRS.md." in replayed.metadata["final_text"]
 
     def test_replay_metadata_matches(
         self, adapter: ClaudeCodeAdapter, persona: AgentDefinition
@@ -158,13 +161,15 @@ class TestReplaySuccess:
             run_id, EVENT_SPAWN_STARTED,
             {"adapter": "claude-code", "persona_id": "p1", "stage_id": "srs"},
         )
-        for word in ("Hello", "World"):
-            event_store.append(
-                run_id, EVENT_STREAM,
-                {"type": "assistant",
-                 "raw": {"type": "assistant",
-                         "message": {"content": [{"type": "text", "text": word}]}}},
-            )
+        write_block = {
+            "type": "tool_use", "id": "t1", "name": "Write",
+            "input": {"file_path": "SRS.md", "content": "# SRS"},
+        }
+        event_store.append(
+            run_id, EVENT_STREAM,
+            {"type": "assistant",
+             "raw": {"type": "assistant", "message": {"content": [write_block]}}},
+        )
         event_store.append(
             run_id, EVENT_SPAWN_COMPLETED,
             {"adapter": "claude-code", "handle_id": "h-xyz", "status": "completed",
@@ -174,7 +179,7 @@ class TestReplaySuccess:
         assert handle.handle_id == "h-xyz"
         assert handle.persona_id == "p1"
         assert handle.stage_id == "srs"
-        assert handle.outputs[0].description == "Hello\nWorld"
+        assert [(o.path, o.kind) for o in handle.outputs] == [("SRS.md", "file")]
         assert handle.metadata == {"run_id": run_id}
 
     def test_replay_empty_stream_has_no_outputs(
@@ -190,7 +195,7 @@ class TestReplaySuccess:
     ) -> None:
         original = _record_a_spawn(adapter, persona)
         run_id = original.metadata["run_id"]
-        assert replay_session(event_store, run_id) == original
+        assert replay_session(event_store, run_id, adapter.project_root) == original
 
 
 # ── Error paths ───────────────────────────────────────────────────────────────
