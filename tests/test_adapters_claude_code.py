@@ -351,6 +351,21 @@ class TestRunnerPermissionMode:
                 registry.create("claude_code", tmp_path, {"permission_mode": "yolo"})
 
 
+class TestBatchExecutionDirective:
+    def test_prompt_instructs_non_interactive_artifact_production(
+        self, adapter: ClaudeCodeAdapter, persona: AgentDefinition
+    ) -> None:
+        # Kill-criterion regression: without the directive, `claude -p` opened
+        # a conversation ("What are you building?") instead of writing the
+        # contract outputs — zero tool uses on a paid run.
+        with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)) as mock_run:
+            adapter.spawn_agent(persona, "ctx", ["read_file"])
+        cmd = mock_run.call_args[0][0]
+        prompt = cmd[cmd.index("-p") + 1]
+        assert "non-interactive batch run" in prompt
+        assert "required_outputs" in prompt
+
+
 class TestGetClaudeVersion:
     def test_returns_stripped_version(self) -> None:
         proc = _make_proc(stdout="2.1.170 (Claude Code)\n")
@@ -441,14 +456,49 @@ class TestSpawnAgent:
         assert handle.metadata["tool_use_count"] == 1
         assert "read_file" in handle.metadata["tools_granted"]
 
-    def test_handle_outputs_contains_text(
+    def test_final_text_exposed_in_metadata_not_outputs(
         self, adapter: ClaudeCodeAdapter, persona: AgentDefinition
     ) -> None:
+        # The fixture's only tool use is Read — no files written, so no output
+        # artifacts. The transcript text lives in metadata (every artifact must
+        # carry a registrable project-relative path; found by the kill criterion).
         with patch("subprocess.run", return_value=_make_proc(FIXTURE_STREAM_JSON)):
             handle = adapter.spawn_agent(persona, "context", ["read_file"])
 
-        assert len(handle.outputs) == 1
-        assert "Done. Produced SRS.md." in handle.outputs[0].description
+        assert handle.outputs == []
+        assert "Done. Produced SRS.md." in handle.metadata["final_text"]
+
+    def test_handle_outputs_derived_from_write_tool_uses(
+        self, adapter: ClaudeCodeAdapter, persona: AgentDefinition
+    ) -> None:
+        stream = "\n".join([
+            _assistant(_tool_use("t1", "Write", file_path="SRS.md", content="# SRS")),
+            _result("Wrote SRS.md"),
+        ])
+        with patch("subprocess.run", return_value=_make_proc(stream)):
+            handle = adapter.spawn_agent(persona, "context", ["write_file"])
+
+        assert [(o.path, o.kind) for o in handle.outputs] == [("SRS.md", "file")]
+
+    def test_outputs_relativize_absolute_paths_and_skip_outside_project(
+        self, adapter: ClaudeCodeAdapter, persona: AgentDefinition, project_root: Path
+    ) -> None:
+        inside = str(project_root / "docs" / "SRS.md")
+        stream = "\n".join([
+            _assistant(
+                _tool_use("t1", "Write", file_path=inside, content="x"),
+                _tool_use("t2", "Write", file_path="/etc/passwd", content="x"),
+                _tool_use("t3", "Edit", file_path=inside, old_string="a", new_string="b"),
+                _tool_use("t4", "NotebookEdit", file_path="analysis.ipynb", new_source="x"),
+            ),
+            _result("done"),
+        ])
+        with patch("subprocess.run", return_value=_make_proc(stream)):
+            handle = adapter.spawn_agent(persona, "context", ["write_file"])
+
+        # inside-path relativized, outside-path skipped, duplicate deduped,
+        # NotebookEdit counted as a file-writing tool
+        assert [o.path for o in handle.outputs] == ["docs/SRS.md", "analysis.ipynb"]
 
     def test_filters_unknown_tools(
         self, adapter: ClaudeCodeAdapter, persona: AgentDefinition

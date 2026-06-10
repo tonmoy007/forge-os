@@ -14,6 +14,7 @@ original spawn, which raised).
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from forge_os.adapters.base import AgentHandle
@@ -22,7 +23,7 @@ from forge_os.adapters.claude_code.adapter import (
     EVENT_SPAWN_FAILED,
     EVENT_SPAWN_STARTED,
     EVENT_STREAM,
-    extract_text_outputs,
+    extract_outputs,
 )
 from forge_os.adapters.claude_code.runner import RunResult, StreamEvent
 from forge_os.events.store import EventStore
@@ -32,12 +33,14 @@ class ReplayError(RuntimeError):
     """Raised when a run cannot be replayed (missing, incomplete, or failed)."""
 
 
-def replay_session(event_store: EventStore, run_id: str) -> AgentHandle:
+def replay_session(event_store: EventStore, run_id: str, project_root: Path) -> AgentHandle:
     """Reconstruct the AgentHandle for ``run_id`` from the recorded event stream.
 
-    Raises ReplayError if the run is unknown, has no start event, never reached
-    a terminal event, terminated in failure, or has a malformed / schema-
-    incompatible event record (e.g. recorded by an older adapter version).
+    ``project_root`` anchors output-path derivation, exactly as in the live
+    spawn. Raises ReplayError if the run is unknown, has no start event, never
+    reached a terminal event, terminated in failure, or has a malformed /
+    schema-incompatible event record (e.g. recorded by an older adapter
+    version).
     """
     events = event_store.read_stream(run_id)
     if not events:
@@ -47,14 +50,16 @@ def replay_session(event_store: EventStore, run_id: str) -> AgentHandle:
     # ReplayError rather than a raw KeyError/JSONDecodeError. The control-flow
     # ReplayErrors raised inside pass through untouched (not in the catch tuple).
     try:
-        return _reconstruct_handle(run_id, events)
+        return _reconstruct_handle(run_id, events, project_root)
     except (KeyError, TypeError, json.JSONDecodeError) as exc:
         raise ReplayError(
             f"run {run_id!r} has a malformed or incompatible event record: {exc}"
         ) from exc
 
 
-def _reconstruct_handle(run_id: str, events: list[dict[str, Any]]) -> AgentHandle:
+def _reconstruct_handle(
+    run_id: str, events: list[dict[str, Any]], project_root: Path
+) -> AgentHandle:
     started: dict[str, Any] | None = None
     stream: list[StreamEvent] = []
     terminal: tuple[str, dict[str, Any]] | None = None
@@ -89,6 +94,6 @@ def _reconstruct_handle(run_id: str, events: list[dict[str, Any]]) -> AgentHandl
         persona_id=started["persona_id"],
         stage_id=started.get("stage_id"),
         status=terminal_payload["status"],
-        outputs=extract_text_outputs(result),
+        outputs=extract_outputs(result, project_root),
         metadata=terminal_payload["metadata"],
     )

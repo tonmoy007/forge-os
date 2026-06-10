@@ -85,6 +85,68 @@ def test_dummy_adapter_runs_current_stage_and_persists_outputs(tmp_path: Path) -
     assert json.loads(runs[0])["persona_id"] == "requirements_analyst"
 
 
+def test_stage_context_carries_contract_required_outputs(tmp_path: Path) -> None:
+    # Regression for the Phase 05.5 kill-criterion finding: a real kernel only
+    # learns which files to produce from the spawn context — the contract's
+    # required outputs must be in it (DummyAdapter fabricating SRS.md itself
+    # had masked the omission).
+    _ = initialize_project(tmp_path, project_name="Demo", profile="minimal")
+    state = load_state(tmp_path)
+    captured: dict[str, str] = {}
+
+    from forge_os.adapters.dummy import DummyAdapter
+
+    original_spawn = DummyAdapter.spawn_agent
+
+    def capturing_spawn(self, persona, context, tools):  # noqa: ANN001
+        captured["context"] = context
+        return original_spawn(self, persona, context, tools)
+
+    with patch.object(DummyAdapter, "spawn_agent", capturing_spawn):
+        _ = run_stage_agent(tmp_path, state, "srs")
+
+    context = json.loads(captured["context"])
+    assert context["execution_mode"] == "batch"
+    assert context["required_outputs"] == [
+        {
+            "path": "SRS.md",
+            "type": "file_exists",
+            "description": "Primary deterministic output for the srs stage.",
+            "blocking": True,
+        }
+    ]
+
+
+def test_claude_code_prompt_carries_contract_path_end_to_end(tmp_path: Path) -> None:
+    # Executor → ClaudeCodeAdapter integration (subprocess mocked): the prompt
+    # given to `claude -p` must name the contract's required output so a real
+    # kernel knows the deliverable — the kill-criterion failure mode.
+    _ = initialize_project(
+        tmp_path, project_name="Demo", profile="minimal", default_adapter="claude_code"
+    )
+    state = load_state(tmp_path)
+
+    stream = json.dumps({
+        "type": "result", "subtype": "success", "is_error": False,
+        "result": "done", "usage": {}, "total_cost_usd": 0.0,
+    })
+    completed = type(
+        "P", (), {"stdout": stream, "stderr": "", "returncode": 0}
+    )()
+
+    with patch("shutil.which", return_value="/usr/bin/claude"):
+        with patch("subprocess.run", return_value=completed) as mock_run:
+            try:
+                run_stage_agent(tmp_path, state, "srs")
+            except AgentExecutionError:
+                pass  # contract fails (no SRS.md written by the mock) — irrelevant here
+
+    cmd = mock_run.call_args[0][0]
+    prompt = cmd[cmd.index("-p") + 1]
+    assert "SRS.md" in prompt
+    assert "non-interactive batch run" in prompt
+
+
 def test_missing_dummy_outputs_fail_output_contract(tmp_path: Path) -> None:
     _ = initialize_project(tmp_path, project_name="Demo", profile="minimal")
     config_path = tmp_path / ".forge" / "config.yaml"

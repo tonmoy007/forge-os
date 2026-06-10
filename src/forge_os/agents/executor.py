@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from forge_os.adapters.registry import AdapterRegistryError, create_adapter_from_config
 from forge_os.agents.loader import AgentLoadError, contract_for_persona, persona_for_stage
-from forge_os.agents.models import AgentRunRecord, validate_contract
+from forge_os.agents.models import AgentRunRecord, OutputContract, validate_contract
 from forge_os.config.loader import ConfigError
 from forge_os.context.pruner import ContextPruner, ContextPrunerError
 from forge_os.context.registry import ArtifactRegistry, ArtifactRegistryError
@@ -44,7 +44,9 @@ def run_stage_agent(project_root: Path, state: PipelineState, stage_id: str) -> 
         context_selection = ContextPruner(project_root).select(stage_id, token_budget=2000)
     except ContextPrunerError as exc:
         raise AgentExecutionError(str(exc)) from exc
-    context = _stage_context(state, stage_id, approved_lessons, context_selection.model_dump())
+    context = _stage_context(
+        state, stage_id, approved_lessons, context_selection.model_dump(), contract
+    )
     tools = persona.default_tools or adapter.get_default_tools()
     try:
         handle = adapter.spawn_agent(persona, context, tools)
@@ -89,15 +91,32 @@ def _stage_context(
     stage_id: str,
     approved_lessons: list[dict[str, object]],
     context_selection: dict[str, object],
+    contract: OutputContract,
 ) -> str:
+    # The contract's required outputs MUST reach the agent: a real kernel only
+    # knows which files to produce from this context (the deterministic
+    # DummyAdapter fabricated its own outputs, which masked the gap — found by
+    # the Phase 05.5 kill-criterion run).
     return json.dumps(
         {
             "project_id": state.project_id,
             "profile": state.profile,
             "current_stage_id": state.current_stage_id,
             "stage_id": stage_id,
+            # Stage runs are unattended; adapters render this for their kernel
+            # (e.g. ClaudeCodeAdapter's batch execution directive).
+            "execution_mode": "batch",
             "approved_lessons": approved_lessons,
             "selected_context": context_selection,
+            "required_outputs": [
+                {
+                    "path": requirement.path,
+                    "type": requirement.type,
+                    "description": requirement.description,
+                    "blocking": requirement.blocking,
+                }
+                for requirement in contract.required_outputs
+            ],
         },
         sort_keys=True,
     )
@@ -163,7 +182,9 @@ async def run_stage_agent_async(
         context_selection = ContextPruner(project_root).select(stage_id, token_budget=2000)
     except ContextPrunerError as exc:
         raise AgentExecutionError(str(exc)) from exc
-    context = _stage_context(state, stage_id, approved_lessons, context_selection.model_dump())
+    context = _stage_context(
+        state, stage_id, approved_lessons, context_selection.model_dump(), contract
+    )
     tools = persona.default_tools or []
 
     # Use AsyncDummyAdapter. In future phases this routes to the configured
