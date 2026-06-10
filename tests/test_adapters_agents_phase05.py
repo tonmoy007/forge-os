@@ -107,6 +107,8 @@ def test_stage_context_carries_contract_required_outputs(tmp_path: Path) -> None
 
     context = json.loads(captured["context"])
     assert context["execution_mode"] == "batch"
+    # Phase 10 WS-D: the lazy context bundle rides along with the spawn context.
+    assert "lazy_context" in context
     assert context["required_outputs"] == [
         {
             "path": "SRS.md",
