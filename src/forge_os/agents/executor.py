@@ -6,6 +6,7 @@ Phase 08.5 adds async variant `run_stage_agent_async`.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from uuid import uuid4
 
@@ -13,6 +14,7 @@ from forge_os.adapters.registry import AdapterRegistryError, create_adapter_from
 from forge_os.agents.loader import AgentLoadError, contract_for_persona, persona_for_stage
 from forge_os.agents.models import AgentRunRecord, OutputContract, validate_contract
 from forge_os.config.loader import ConfigError
+from forge_os.context.lazy import LazyContextBuilder, LazyContextError
 from forge_os.context.pruner import ContextPruner, ContextPrunerError
 from forge_os.context.registry import ArtifactRegistry, ArtifactRegistryError
 from forge_os.core.state_manager import utc_now
@@ -20,13 +22,25 @@ from forge_os.events.model import new_event
 from forge_os.memory.lessons import LessonStore
 from forge_os.schemas.state import PipelineState
 
+log = logging.getLogger("forge.agents.executor")
+
 
 class AgentExecutionError(RuntimeError):
     """Raised when a stage agent cannot be executed successfully."""
 
 
-def run_stage_agent(project_root: Path, state: PipelineState, stage_id: str) -> AgentRunRecord:
-    """Spawn the configured stage agent and persist a normalized run record."""
+def run_stage_agent(
+    project_root: Path,
+    state: PipelineState,
+    stage_id: str,
+    *,
+    forge_dir: Path | None = None,
+) -> AgentRunRecord:
+    """Spawn the configured stage agent and persist a normalized run record.
+
+    `forge_dir` (L001/L005) reaches the lazy-context skill reader; default None
+    means the real `~/.forge`.
+    """
 
     try:
         from forge_os.config.loader import load_config
@@ -45,7 +59,13 @@ def run_stage_agent(project_root: Path, state: PipelineState, stage_id: str) -> 
     except ContextPrunerError as exc:
         raise AgentExecutionError(str(exc)) from exc
     context = _stage_context(
-        state, stage_id, approved_lessons, context_selection.model_dump(), contract
+        project_root,
+        state,
+        stage_id,
+        approved_lessons,
+        context_selection.model_dump(),
+        contract,
+        forge_dir=forge_dir,
     )
     tools = persona.default_tools or adapter.get_default_tools()
     try:
@@ -87,16 +107,31 @@ def run_stage_agent(project_root: Path, state: PipelineState, stage_id: str) -> 
 
 
 def _stage_context(
+    project_root: Path,
     state: PipelineState,
     stage_id: str,
     approved_lessons: list[dict[str, object]],
     context_selection: dict[str, object],
     contract: OutputContract,
+    *,
+    forge_dir: Path | None = None,
 ) -> str:
     # The contract's required outputs MUST reach the agent: a real kernel only
     # knows which files to produce from this context (the deterministic
     # DummyAdapter fabricated its own outputs, which masked the gap — found by
     # the Phase 05.5 kill-criterion run).
+
+    # Phase 10 WS-D: lazy context (skill menu + lesson index) must never break
+    # an agent spawn, but failures must stay visible in the log and payload.
+    try:
+        lazy_context: dict[str, object] = (
+            LazyContextBuilder(project_root, forge_dir=forge_dir)
+            .build(stage_id, token_budget=2000)
+            .model_dump()
+        )
+    except (LazyContextError, OSError) as exc:
+        log.warning("Lazy context build failed for stage %s: %s", stage_id, exc)
+        lazy_context = {"skills_menu": [], "lesson_index": [], "error": str(exc)}
     return json.dumps(
         {
             "project_id": state.project_id,
@@ -108,6 +143,7 @@ def _stage_context(
             "execution_mode": "batch",
             "approved_lessons": approved_lessons,
             "selected_context": context_selection,
+            "lazy_context": lazy_context,
             "required_outputs": [
                 {
                     "path": requirement.path,
@@ -161,6 +197,8 @@ async def run_stage_agent_async(
     project_root: Path,
     state: PipelineState,
     stage_id: str,
+    *,
+    forge_dir: Path | None = None,
 ) -> AgentRunRecord:
     """Async variant of run_stage_agent. Uses AsyncDummyAdapter when configured.
 
@@ -183,7 +221,13 @@ async def run_stage_agent_async(
     except ContextPrunerError as exc:
         raise AgentExecutionError(str(exc)) from exc
     context = _stage_context(
-        state, stage_id, approved_lessons, context_selection.model_dump(), contract
+        project_root,
+        state,
+        stage_id,
+        approved_lessons,
+        context_selection.model_dump(),
+        contract,
+        forge_dir=forge_dir,
     )
     tools = persona.default_tools or []
 
