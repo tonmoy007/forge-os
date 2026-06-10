@@ -121,3 +121,19 @@ def test_apply_decay_is_deterministic_and_skips_dormant_lessons(tmp_path: Path) 
     assert second == {"examined": 0, "decayed": 0, "newly_dormant": 0, "dormant_ids": []}
     refreshed = next(item for item in store.load().lessons if item.id == lesson_id)
     assert refreshed.confidence == pytest.approx(confidence_after_first)
+
+
+def test_decayed_confidence_rejects_non_positive_half_life() -> None:
+    with pytest.raises(ValueError, match="half_life_days must be positive"):
+        decayed_confidence(0.8, days_since_use=10.0, half_life_days=0.0)
+
+
+def test_apply_decay_rejects_invalid_parameters(tmp_path: Path) -> None:
+    store = LessonStore(tmp_path)
+
+    with pytest.raises(ValueError, match="dormancy_days must be positive"):
+        apply_decay(store, dormancy_days=0.0)
+    with pytest.raises(ValueError, match="dormancy_threshold must be within"):
+        apply_decay(store, dormancy_threshold=1.5)
+    with pytest.raises(ValueError, match="half_life_days must be positive"):
+        apply_decay(store, half_life_days=-1.0)

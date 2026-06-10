@@ -209,3 +209,45 @@ def test_adapter_status_cli_command() -> None:
     assert result.exit_code == 0, result.output
     assert "Forge Adapter Status" in result.output
     assert "DummyAdapter" in result.output
+
+
+def test_dormant_lessons_excluded_and_usage_recorded_through_executor(tmp_path: Path) -> None:
+    # Phase 10 WS-B: the executor path must (a) never inject dormant lessons and
+    # (b) record usage on the lessons it does inject (FR-ML-003 decay input).
+    from forge_os.memory.lessons import LessonStore
+
+    _ = initialize_project(tmp_path, project_name="Demo", profile="minimal")
+    store = LessonStore(tmp_path)
+    live = store.add("Always run the suite in Docker before sign-off.", confidence=0.9)
+    _ = store.approve(live.id)
+    dormant = store.add("Old dormant guidance about caching.", confidence=0.9)
+    _ = store.approve(dormant.id)
+    document = store.load()
+    for lesson in document.lessons:
+        if lesson.id == dormant.id:
+            lesson.dormant = True
+    store.save(document)
+
+    state = load_state(tmp_path)
+    captured: dict[str, str] = {}
+
+    from forge_os.adapters.dummy import DummyAdapter
+
+    original_spawn = DummyAdapter.spawn_agent
+
+    def capturing_spawn(self, persona, context, tools):  # noqa: ANN001
+        captured["context"] = context
+        return original_spawn(self, persona, context, tools)
+
+    with patch.object(DummyAdapter, "spawn_agent", capturing_spawn):
+        _ = run_stage_agent(tmp_path, state, "srs")
+
+    context = json.loads(captured["context"])
+    injected_ids = [entry["id"] for entry in context["approved_lessons"]]
+    assert live.id in injected_ids
+    assert dormant.id not in injected_ids
+
+    refreshed = {lesson.id: lesson for lesson in LessonStore(tmp_path).list()}
+    assert refreshed[live.id].use_count == 1
+    assert refreshed[live.id].last_used_at is not None
+    assert refreshed[dormant.id].use_count == 0

@@ -142,6 +142,13 @@ class LessonStore:
         min_confidence: float = 0.8,
         limit: int = 5,
     ) -> list[dict[str, object]]:
+        """Render approved lessons for agent-context injection.
+
+        SIDE EFFECT (by design, FR-ML-003): rendering counts as *usage* —
+        each returned lesson gets ``last_used_at`` refreshed and ``use_count``
+        incremented, and the store is persisted. The Dreamer's decay reads
+        these fields, so injection keeps a lesson's confidence alive.
+        """
         selected_ids = [
             lesson.id
             for lesson in self.approved_for_context(

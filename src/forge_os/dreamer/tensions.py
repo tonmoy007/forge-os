@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 from forge_os.core.state_manager import utc_now
+from forge_os.dreamer.timeutil import parse_timestamp
 from forge_os.memory.lessons import LessonStore
 from forge_os.memory.models import Lesson
 from forge_os.memory.reflections import ReflectionStore
@@ -80,7 +81,7 @@ def reingest_reflections(
     """
 
     timestamp = now or utc_now()
-    window_start = _parse_timestamp(timestamp) - timedelta(days=window_days)
+    window_start = parse_timestamp(timestamp) - timedelta(days=window_days)
     reflection_store = ReflectionStore(project_root)
     lesson_store = LessonStore(project_root)
 
@@ -88,7 +89,7 @@ def reingest_reflections(
     recent = [
         reflection
         for reflection in all_reflections
-        if _parse_timestamp(reflection.created_at) >= window_start
+        if parse_timestamp(reflection.created_at) >= window_start
     ]
 
     recurrence_by_stage: dict[str, int] = {}
@@ -172,7 +173,3 @@ def _content_words(text: str) -> set[str]:
         for word in _WORD_PATTERN.findall(text.lower())
         if len(word) >= _MIN_SHARED_WORD_LENGTH and word not in _POLARITY_WORDS
     }
-
-
-def _parse_timestamp(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))

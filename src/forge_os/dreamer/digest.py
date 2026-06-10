@@ -79,8 +79,8 @@ class DailyDigestWriter:
             for event in gate_events:
                 detail = ""
                 if event.event_type == "GateCompleted":
-                    blocking_failed = event.payload.get("blocking_failed")
-                    result_count = event.payload.get("result_count")
+                    blocking_failed = event.payload.get("blocking_failed", False)
+                    result_count = event.payload.get("result_count", 0)
                     detail = f" blocking_failed={blocking_failed} result_count={result_count}"
                 lines.append(
                     f"- {event.timestamp} `{event.event_type}` "

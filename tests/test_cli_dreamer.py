@@ -32,12 +32,17 @@ def test_scan_command_reports_counts(tmp_path: Path) -> None:
 
 
 def test_decay_command_reports_summary(tmp_path: Path) -> None:
+    from forge_os.memory.lessons import LessonStore
+
     _ = initialize_project(tmp_path, project_name="Demo", profile="minimal")
+    store = LessonStore(tmp_path)
+    lesson = store.add("Fresh approved lesson.", confidence=0.9)
+    _ = store.approve(lesson.id)
 
     result = runner.invoke(dreamer_app, ["decay", "--path", str(tmp_path)])
 
     assert result.exit_code == 0, result.output
-    assert "Examined:" in result.output
+    assert "Examined: 1" in result.output  # real count, not just the label
 
 
 def test_commands_fail_outside_a_forge_project(tmp_path: Path) -> None:
