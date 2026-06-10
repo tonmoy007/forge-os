@@ -11,12 +11,18 @@ class ObserverConfig(BaseModel):
     enabled: bool = False
     poll_interval_seconds: float = 60.0
     acp_session_cleanup_interval_seconds: float = 300.0
+    acp_agent_health_interval_seconds: float = 300.0
     metrics_interval_seconds: float = 300.0
     stale_session_max_age_seconds: float = 3600.0
 
 
 class AgentMetrics(BaseModel):
-    """Per-agent uptime/restart counters persisted by the observer."""
+    """Per-agent uptime/restart counters persisted by the observer.
+
+    `restarts` counts restart ATTEMPTS (one per check cycle while an agent
+    stays unhealthy), not successful recoveries — recovery shows up as the
+    agent leaving the unhealthy set and uptime resuming.
+    """
 
     model_config = ConfigDict(extra="allow")
 

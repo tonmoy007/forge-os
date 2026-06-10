@@ -71,7 +71,7 @@ def _observer_tasks(project_root: Path, forge_dir: Path | None) -> list[Schedule
         ),
         ScheduledTask(
             name="observer-agent-health",
-            interval_seconds=config.acp_session_cleanup_interval_seconds,
+            interval_seconds=config.acp_agent_health_interval_seconds,
             run=monitor.restart_unhealthy_agents,
         ),
         ScheduledTask(

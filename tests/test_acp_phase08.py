@@ -374,3 +374,29 @@ class TestACPUseCasesSessions:
 
         with pytest.raises(ACPClientError, match="No ACP agents installed"):
             use_cases.close_session("s1")
+
+
+def test_acp_client_receive_times_out_on_unresponsive_agent() -> None:
+    # Phase 10 regression: a hung agent must not block forever — the daemon's
+    # single-threaded task runner would stall every scheduled task.
+    import sys
+
+    from forge_os.kernel.acp_client import ACPClient, ACPClientError
+
+    client = ACPClient(
+        [sys.executable, "-c", "import time; time.sleep(30)"], response_timeout=0.3
+    )
+    try:
+        with pytest.raises(ACPClientError, match="Timed out after 0.3s"):
+            _ = client.start()  # initialize never gets a response
+    finally:
+        client.stop()
+
+
+def test_agent_command_from_install_splits_install_path() -> None:
+    from forge_os.kernel.acp_client import agent_command_from_install
+
+    assert agent_command_from_install({"install_path": "npx @scope/agent --acp"}) == [
+        "npx", "@scope/agent", "--acp",
+    ]
+    assert agent_command_from_install({}) == []

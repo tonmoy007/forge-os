@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shlex
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -23,7 +22,7 @@ from pydantic import ValidationError
 from forge_os.config.loader import ConfigError, load_config
 from forge_os.core.state_manager import utc_now
 from forge_os.daemon.state import DaemonStateError, DaemonStateStore
-from forge_os.kernel.acp_client import ACPClient
+from forge_os.kernel.acp_client import ACPClient, agent_command_from_install
 from forge_os.kernel.acp_registry_adapter import ACPRegistryAdapter
 from forge_os.schemas.daemon import DaemonAlert
 from forge_os.schemas.observer import AgentMetrics, ObserverConfig, ObserverMetrics
@@ -121,38 +120,41 @@ class ObserverMonitor:
         checked = closed = errors = 0
         for agent in self._installed_agents():
             agent_id = str(agent.get("id", "unknown"))
-            client = self._client_factory(_agent_command(agent))
+            client = self._client_factory(agent_command_from_install(agent))
+            # finally guarantees the subprocess is stopped on EVERY path —
+            # including exceptions no branch anticipated (WS-C review).
             try:
-                client.start()
-                sessions = client.session_list()
-            except Exception as exc:  # boundary to an external agent process
-                errors += 1
-                log.warning("cannot reach agent %s for session cleanup: %s", agent_id, exc)
-                self._alert(
-                    source="acp-sessions",
-                    severity="warning",
-                    message=f"Could not list sessions for agent '{agent_id}': {exc}",
-                    metadata={"agent_id": agent_id},
-                )
-                self._stop_quietly(client, agent_id)
-                continue
-            for session in sessions:
-                checked += 1
-                age = _session_age_seconds(session, now_dt)
-                if age is None or age <= max_age:
-                    continue
                 try:
-                    client.session_close(session.id)
-                    closed += 1
+                    client.start()
+                    sessions = client.session_list()
                 except Exception as exc:  # boundary to an external agent process
                     errors += 1
-                    log.warning(
-                        "failed to close stale session %s on agent %s: %s",
-                        session.id,
-                        agent_id,
-                        exc,
+                    log.warning("cannot reach agent %s for session cleanup: %s", agent_id, exc)
+                    self._alert(
+                        source="acp-sessions",
+                        severity="warning",
+                        message=f"Could not list sessions for agent '{agent_id}': {exc}",
+                        metadata={"agent_id": agent_id},
                     )
-            self._stop_quietly(client, agent_id)
+                    continue
+                for session in sessions:
+                    checked += 1
+                    age = _session_age_seconds(session, now_dt)
+                    if age is None or age <= max_age:
+                        continue
+                    try:
+                        client.session_close(session.id)
+                        closed += 1
+                    except Exception as exc:  # boundary to an external agent process
+                        errors += 1
+                        log.warning(
+                            "failed to close stale session %s on agent %s: %s",
+                            session.id,
+                            agent_id,
+                            exc,
+                        )
+            finally:
+                self._stop_quietly(client, agent_id)
         return {"checked": checked, "closed": closed, "errors": errors}
 
     # ── P10.13: unhealthy agent restart ────────────────────────────────────
@@ -167,7 +169,7 @@ class ObserverMonitor:
         for agent in self._installed_agents():
             agent_id = str(agent.get("id", "unknown"))
             checked += 1
-            client = self._client_factory(_agent_command(agent))
+            client = self._client_factory(agent_command_from_install(agent))
             if self._probe(client, agent_id):
                 healthy += 1
                 self._unhealthy_agents.discard(agent_id)
@@ -300,11 +302,6 @@ class ObserverMonitor:
             temp_path.unlink(missing_ok=True)
             raise
 
-
-def _agent_command(agent: dict[str, Any]) -> list[str]:
-    """Split an installed agent's `install_path` into an argv list."""
-
-    return shlex.split(str(agent.get("install_path", "")))
 
 
 def _session_age_seconds(session: Any, now_dt: datetime) -> float | None:

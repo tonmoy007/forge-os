@@ -187,7 +187,9 @@ def test_check_registry_accessible_adds_no_alert(tmp_path: Path) -> None:
     assert state is not None and state.alerts == []
 
 
-def test_check_registry_failure_alerts_warning_once_per_check(tmp_path: Path) -> None:
+def test_check_registry_persistent_failure_alerts_once_not_per_poll(tmp_path: Path) -> None:
+    # Anti-spam: identical consecutive alerts are suppressed by the store, so a
+    # registry outage produces ONE alert, not one per 60s poll.
     store = seed_daemon_state(tmp_path / "forge")
     monitor = make_monitor(tmp_path, registry=FakeRegistry(accessible=False))
 
@@ -198,8 +200,13 @@ def test_check_registry_failure_alerts_warning_once_per_check(tmp_path: Path) ->
     assert second == {"accessible": False, "alerted": True}
     state = store.load()
     assert state is not None
-    assert len(state.alerts) == 2
-    assert all(a.severity == "warning" and a.source == "acp-registry" for a in state.alerts)
+    assert len(state.alerts) == 1
+    alert = state.alerts[0]
+    assert alert.severity == "warning"
+    assert alert.source == "acp-registry"
+    assert alert.alert_id
+    assert alert.created_at
+    assert "registry" in alert.message.lower()
 
 
 def test_check_registry_failure_without_daemon_state_drops_alert(tmp_path: Path) -> None:
@@ -403,3 +410,47 @@ def test_collect_metrics_writes_valid_json_document(tmp_path: Path) -> None:
     raw = json.loads(monitor.metrics_path.read_text(encoding="utf-8"))
     assert raw["collected_at"] == NOW
     assert "agent-a" in raw["agents"]
+
+
+def test_cleanup_stops_client_on_every_path(tmp_path: Path) -> None:
+    # Resource lifecycle: the agent subprocess is stopped on success, list
+    # failure, and close-error paths alike (try/finally in cleanup).
+    seed_daemon_state(tmp_path / "forge")
+    stale = session("s-old", "2026-06-09T00:00:00Z")
+    ok_client = FakeClient(sessions=[stale])
+    broken_client = FakeClient(start_failures=99)
+    close_error_client = FakeClient(sessions=[stale], close_error=True)
+    clients = iter([ok_client, broken_client, close_error_client])
+    registry = FakeRegistry(
+        agents=[agent_record("a-ok"), agent_record("a-broken"), agent_record("a-close-err")]
+    )
+    monitor = ObserverMonitor(
+        tmp_path / "project",
+        forge_dir=tmp_path / "forge",
+        now=Clock(),
+        config=ObserverConfig(enabled=True),
+        registry=registry,  # type: ignore[arg-type]
+        client_factory=lambda command: next(clients),
+    )
+
+    result = monitor.cleanup_stale_sessions()
+
+    assert result["errors"] == 2  # unreachable agent + failed close
+    assert ok_client.stop_calls == 1
+    assert broken_client.stop_calls == 1
+    assert close_error_client.stop_calls == 1
+
+
+def test_metrics_round_trip_preserves_schema_version(tmp_path: Path) -> None:
+    seed_daemon_state(tmp_path / "forge")
+    monitor = make_monitor(
+        tmp_path,
+        registry=FakeRegistry(agents=[agent_record("a1")]),
+        client=FakeClient(),
+    )
+
+    _ = monitor.collect_metrics()
+
+    raw = json.loads((tmp_path / "forge" / "daemon" / "metrics.json").read_text())
+    assert raw["schema_version"] == "0.1"
+    assert raw["collected_at"]

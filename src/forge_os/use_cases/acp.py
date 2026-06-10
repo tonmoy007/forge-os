@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-import shlex
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from forge_os.kernel.acp_client import ACPClient, ACPClientError
+from forge_os.kernel.acp_client import (
+    ACPClient,
+    ACPClientError,
+    agent_command_from_install,
+)
 from forge_os.kernel.acp_registry_adapter import ACPRegistryAdapter
 
 
@@ -74,7 +77,7 @@ class ACPUseCases:
             installed = [a for a in installed if a.get("id") == agent_id]
         sessions: list[dict[str, Any]] = []
         for agent in installed:
-            client = self._client_factory(_agent_command(agent))
+            client = self._client_factory(agent_command_from_install(agent))
             client.start()
             try:
                 for info in client.session_list():
@@ -100,7 +103,7 @@ class ACPUseCases:
         if not installed:
             raise ACPClientError("No ACP agents installed; there is no session to close.")
         for agent in installed:
-            client = self._client_factory(_agent_command(agent))
+            client = self._client_factory(agent_command_from_install(agent))
             client.start()
             try:
                 if any(info.id == session_id for info in client.session_list()):
@@ -121,8 +124,3 @@ class ACPUseCases:
             types.append("uvx")
         return types
 
-
-def _agent_command(agent: dict[str, Any]) -> list[str]:
-    """Split an installed agent's `install_path` into an argv list."""
-
-    return shlex.split(str(agent.get("install_path", "")))
