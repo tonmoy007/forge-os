@@ -22,11 +22,57 @@ def seed_state(store: DaemonStateStore) -> None:
     )
 
 
+def write_project_config(project_root: Path, observer_value: str) -> None:
+    forge = project_root / ".forge"
+    forge.mkdir(parents=True, exist_ok=True)
+    (forge / "config.yaml").write_text(
+        "schema_version: '0.1'\n"
+        "project:\n"
+        "  name: demo\n"
+        "features:\n"
+        f"  observer: {observer_value}\n",
+        encoding="utf-8",
+    )
+
+
 def test_build_returns_heartbeat_task_with_30s_interval(tmp_path: Path) -> None:
     tasks = build_scheduled_tasks(tmp_path, forge_dir=tmp_path / "forge")
 
     assert [task.name for task in tasks] == ["heartbeat"]
     assert tasks[0].interval_seconds == HEARTBEAT_INTERVAL_SECONDS == 30.0
+
+
+def test_observer_tasks_absent_when_feature_flag_off(tmp_path: Path) -> None:
+    write_project_config(tmp_path, "false")
+
+    tasks = build_scheduled_tasks(tmp_path, forge_dir=tmp_path / "forge")
+
+    assert [task.name for task in tasks] == ["heartbeat"]
+
+
+def test_observer_tasks_registered_with_default_intervals_when_enabled(tmp_path: Path) -> None:
+    write_project_config(tmp_path, "true")
+
+    tasks = build_scheduled_tasks(tmp_path, forge_dir=tmp_path / "forge")
+
+    intervals = {task.name: task.interval_seconds for task in tasks}
+    assert intervals == {
+        "heartbeat": 30.0,
+        "observer-registry": 60.0,
+        "observer-session-cleanup": 300.0,
+        "observer-agent-health": 300.0,
+        "observer-metrics": 300.0,
+    }
+
+
+def test_observer_tasks_honor_interval_overrides(tmp_path: Path) -> None:
+    write_project_config(tmp_path, "{enabled: true, poll_interval_seconds: 15}")
+
+    tasks = build_scheduled_tasks(tmp_path, forge_dir=tmp_path / "forge")
+
+    intervals = {task.name: task.interval_seconds for task in tasks}
+    assert intervals["observer-registry"] == 15.0
+    assert intervals["observer-metrics"] == 300.0
 
 
 def test_heartbeat_updates_last_heartbeat_in_store(tmp_path: Path) -> None:

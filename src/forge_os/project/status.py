@@ -54,6 +54,28 @@ def stale_artifact_count(project_root: Path) -> int:
         return 0
 
 
+def daemon_alerts(forge_dir: Path | None = None, *, limit: int = 5) -> list[dict]:
+    """Return the most recent daemon alerts, newest first.
+
+    Status helpers must not raise: missing or corrupt daemon state yields [].
+    """
+
+    # Imported lazily: core.state_manager imports this module, and
+    # daemon.state imports core.state_manager — a top-level import here
+    # would create a circular import.
+    from forge_os.daemon.state import DaemonStateError, DaemonStateStore
+
+    if limit <= 0:
+        return []
+    try:
+        state = DaemonStateStore(forge_dir).load()
+    except DaemonStateError:
+        return []
+    if state is None:
+        return []
+    return [alert.model_dump() for alert in reversed(state.alerts[-limit:])]
+
+
 def next_action_for(state: PipelineState) -> str:
     """Return a Phase 01 next-action hint without enforcing transitions."""
 

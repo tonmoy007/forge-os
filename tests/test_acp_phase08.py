@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from forge_os.kernel.acp_client import ACPClient, ACPClientError
+from forge_os.kernel.acp_client import ACPClient, ACPClientError, SessionInfo
 from forge_os.kernel.acp_registry_adapter import (
     ACPRegistryAdapter,
     ACPRegistryError,
@@ -264,3 +264,113 @@ class TestACPUseCases:
         use_cases.install_agent("test-agent", distribution_method="npx")
         assert use_cases.uninstall_agent("test-agent") is True
         assert len(use_cases.list_installed_agents()) == 0
+
+
+# ── ACPUseCases session tests (P10 WS-C) ─────────────────────────────────────
+
+
+class FakeSessionClient:
+    """ACPClient stand-in serving a fixed session list, tracking lifecycle calls."""
+
+    def __init__(self, sessions: list[SessionInfo]) -> None:
+        self.sessions = sessions
+        self.started = 0
+        self.stopped = 0
+        self.closed: list[str] = []
+
+    def start(self) -> dict:
+        self.started += 1
+        return {}
+
+    def stop(self) -> None:
+        self.stopped += 1
+
+    def session_list(self) -> list[SessionInfo]:
+        return list(self.sessions)
+
+    def session_close(self, session_id: str) -> None:
+        self.closed.append(session_id)
+
+
+class TestACPUseCasesSessions:
+    @staticmethod
+    def install_agents(project_root: Path, *agent_ids: str) -> None:
+        import json
+
+        acp_dir = project_root / ".forge" / "acp"
+        acp_dir.mkdir(parents=True, exist_ok=True)
+        (acp_dir / "installed.json").write_text(
+            json.dumps(
+                {
+                    agent_id: {
+                        "id": agent_id,
+                        "name": agent_id,
+                        "version": "1.0.0",
+                        "distribution_type": "npx",
+                        "install_path": f"npx -y {agent_id}@latest",
+                    }
+                    for agent_id in agent_ids
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def test_list_sessions_empty_when_no_agents_installed(self, tmp_path: Path) -> None:
+        def factory(command: list[str]):  # pragma: no cover - must not be called
+            raise AssertionError("no client should be built without installed agents")
+
+        use_cases = ACPUseCases(tmp_path, client_factory=factory)
+        assert use_cases.list_sessions() == []
+
+    def test_list_sessions_returns_sessions_from_installed_agent(self, tmp_path: Path) -> None:
+        self.install_agents(tmp_path, "agent-a")
+        client = FakeSessionClient([SessionInfo(id="s1", title="First")])
+        use_cases = ACPUseCases(tmp_path, client_factory=lambda command: client)
+
+        sessions = use_cases.list_sessions()
+
+        assert sessions == [{"id": "s1", "agent_id": "agent-a", "title": "First", "metadata": {}}]
+        assert client.started == 1
+        assert client.stopped == 1
+
+    def test_list_sessions_filters_by_agent_id(self, tmp_path: Path) -> None:
+        self.install_agents(tmp_path, "agent-a", "agent-b")
+        clients_built: list[FakeSessionClient] = []
+
+        def factory(command: list[str]) -> FakeSessionClient:
+            client = FakeSessionClient([SessionInfo(id=f"s{len(clients_built)}")])
+            clients_built.append(client)
+            return client
+
+        use_cases = ACPUseCases(tmp_path, client_factory=factory)
+
+        sessions = use_cases.list_sessions(agent_id="agent-b")
+
+        assert len(sessions) == 1
+        assert sessions[0]["agent_id"] == "agent-b"
+        assert len(clients_built) == 1
+
+    def test_close_session_closes_on_owning_agent(self, tmp_path: Path) -> None:
+        self.install_agents(tmp_path, "agent-a")
+        client = FakeSessionClient([SessionInfo(id="s1")])
+        use_cases = ACPUseCases(tmp_path, client_factory=lambda command: client)
+
+        use_cases.close_session("s1")
+
+        assert client.closed == ["s1"]
+        assert client.stopped == 1
+
+    def test_close_session_raises_when_session_unknown(self, tmp_path: Path) -> None:
+        self.install_agents(tmp_path, "agent-a")
+        client = FakeSessionClient([SessionInfo(id="other")])
+        use_cases = ACPUseCases(tmp_path, client_factory=lambda command: client)
+
+        with pytest.raises(ACPClientError, match="not found"):
+            use_cases.close_session("missing")
+        assert client.closed == []
+
+    def test_close_session_raises_when_no_agents_installed(self, tmp_path: Path) -> None:
+        use_cases = ACPUseCases(tmp_path, client_factory=lambda command: None)
+
+        with pytest.raises(ACPClientError, match="No ACP agents installed"):
+            use_cases.close_session("s1")
