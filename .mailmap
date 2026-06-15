@@ -1,0 +1,4 @@
+# Unify commit identities to one canonical name + the GitHub-verified noreply
+# email. See `git shortlog -sne` and `man gitmailmap`.
+tonmoy <tonmoy007@users.noreply.github.com> <tonmoy@polygontech.xyz>
+tonmoy <tonmoy007@users.noreply.github.com> Saddam Hossain <tonmoy007@users.noreply.github.com>
