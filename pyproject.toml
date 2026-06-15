@@ -8,9 +8,21 @@ version = "0.1.0"
 description = "Local-first, kernel-agnostic software engineering lifecycle operating system."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [
   { name = "Forge OS Contributors" }
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Build Tools",
 ]
 dependencies = [
   "pydantic>=2.0,<3.0",
@@ -18,6 +30,11 @@ dependencies = [
   "rich>=13.0,<14.0",
   "typer>=0.12,<1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/tonmoy007/forge-os"
+Repository = "https://github.com/tonmoy007/forge-os"
+Issues = "https://github.com/tonmoy007/forge-os/issues"
 
 [project.optional-dependencies]
 acp = [
@@ -48,6 +65,7 @@ dev = [
   "pytest>=8.0,<9.0",
   "pytest-asyncio>=0.24,<1.0",
   "ruff>=0.5,<1.0",
+  "build>=1.0",
   "forge-os[async]",
 ]
 
@@ -59,6 +77,19 @@ packages = ["src/forge_os"]
 artifacts = [
   "src/forge_os/agents/personas/*.yaml",
   "src/forge_os/agents/contracts/*.yaml",
+]
+
+# Keep the public sdist lean: ship the package, tests, and release docs — not the
+# internal planning corpus (plan/, tasks/, adr/, .claude/, root design docs).
+[tool.hatch.build.targets.sdist]
+# Root-anchored (leading /) so bare names like README.md don't match nested
+# copies under plan/ — keeps the internal planning corpus out of the sdist.
+include = [
+  "/src/forge_os",
+  "/tests",
+  "/README.md",
+  "/LICENSE",
+  "/pyproject.toml",
 ]
 
 [tool.pytest.ini_options]
