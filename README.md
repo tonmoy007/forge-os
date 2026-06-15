@@ -1,5 +1,9 @@
 # Forge OS
 
+[![CI](https://github.com/tonmoy007/forge-os/actions/workflows/ci.yml/badge.svg)](https://github.com/tonmoy007/forge-os/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
+
 **Forge OS** is a local-first, kernel-agnostic SDLC orchestration CLI. It drives a
 deterministic 12-stage software lifecycle — requirements through release — with
 enforced quality gates, artifact dependency tracking, replayable agent runs, and
