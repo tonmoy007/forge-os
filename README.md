@@ -163,6 +163,10 @@ The reference environment is a clean `python:3.12-slim` container; CI
 
 ## Contributing
 
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full guide — dev setup, quality
+gates, commit style, and how PRs are made and merged. `main` is protected:
+changes land via PR with green CI, and only the maintainer merges. In short:
+
 1. Read `plan/CURRENT_PHASE.md` for live status, then the relevant `plan/PHASE-XX-*.md`.
 2. New CLI commands: domain logic in a domain module → use case in `use_cases/` →
    thin Typer sub-app in `cli/commands/` registered in `main.py`. CLI never
