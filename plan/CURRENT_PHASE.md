@@ -3,7 +3,7 @@
 > **Read order:** `/STATUS.md` → `/CLAUDE.md` → this file → the current phase file.
 >
 > **Session Continuity:** If this session is interrupted, run `git log --oneline -5 && git diff HEAD && cat plan/RESUME.md 2>/dev/null || echo "No RESUME.md"` before continuing.
-> Last validated: 649 tests passed (host `.venv` + clean `python:3.12-slim` Docker, latest deps), ruff clean, compileall clean — 2026-06-10.
+> Last validated: 671 tests passed + 3 perf benchmarks (host `.venv` + clean `python:3.12-slim` Docker, latest deps), ruff clean, compileall clean — 2026-06-15.
 >
 > The 2026-05-13 strategic pause was lifted 2026-06-10 by owner direction ("complete next
 > phase") after the kernel-first arc (Phase 05.5) shipped and the OSS launch prep merged.
@@ -35,6 +35,28 @@ per-finding verification), Docker-validated, and merged via CI-gated PRs:
 Exit checklist: all items pass — daemon round-trip with all 4 built-in tasks executing,
 digest/decay/scan/budget/lazy-stats smoke on a real project, 649 tests, ruff, compileall,
 clean Docker, CI. Daemon remains optional: core CLI works without it.
+
+## Phase 12 — Integration & Performance Testing: COMPLETE (2026-06-15)
+
+Delivered as a series of CI-gated PRs (each adversarially scoped, merged by the owner):
+
+- **Integration suite** (`tests/integration/`, 22 tests): happy-path lifecycle walks
+  (minimal + standard profiles), failure-path negative guarantees (gate block, agent
+  contract failure, override audit, hook-timeout isolation, backtrack guard), the
+  adapter-swap regression (Dummy / Human-via-`AsyncToSyncBridge` / mocked-ClaudeCode →
+  byte-identical canonical state, ADR-005), and a golden gate-evaluation dataset (all four
+  gate types × pass/fail/warn).
+- **Perf harness** (`tests/perf/`, marked `perf`, deselected by default so PR CI stays
+  fast): NFR benchmarks asserting SRS §5.1 — hook dispatch <200ms (0.26ms), context
+  injection <500ms / ≤2000 tok (0.38ms), stage transition <1s (46ms). First baseline
+  committed (`tests/perf/baselines/perf-baseline-2026-06-15.md`); scheduled `perf` CI
+  workflow (`.github/workflows/perf.yml`).
+- **Deferred (documented — L008):** P12.09 daemon idle-RAM / dream-cycle cost; a
+  run-over-run perf-regression detector (the benchmarks assert absolute NFR thresholds,
+  which is the regression guard).
+
+Exit checklist: integration suite <3s; perf suite asserts NFRs; 671 tests + 3 benchmarks,
+ruff + compileall clean, clean Docker + CI.
 
 ## Active Work: Phase 05.5 (kernel-first, D5=B)
 
@@ -75,9 +97,10 @@ Per D5=B (open-source kernel-first sequencing), tactical work resumed on the **k
 
 ## Last Completed Phase
 
-- Phase: 10
-- File: `plan/PHASE-10-daemon-dreamer-lazy-context.md`
-- Status: complete (2026-06-10)
+- Phase: 12 (Integration & Performance Testing)
+- File: `plan/PHASE-12-integration-perf-testing.md`
+- Status: complete (2026-06-15) — core delivered; P12.09 (daemon RAM) and the run-over-run
+  perf-regression detector deferred with documented rationale (lessons L008).
 
 ## Discipline & Clean Code Enforcement (Phase 08+)
 
