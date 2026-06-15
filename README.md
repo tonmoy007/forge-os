@@ -12,10 +12,14 @@ are *execution surfaces only* — swap kernels with a config change, never a cod
 change.
 
 ```bash
+git clone https://github.com/tonmoy007/forge-os && cd forge-os
 pip install -e .
-forge init --adapter claude-code        # verifies the claude binary up front
-forge agent run --stage srs             # real agent writes SRS.md, contract-checked
+forge init --path ./demo --name Demo      # dummy adapter — no AI provider needed
+cd ./demo && forge agent run --stage srs  # writes SRS.md, validated against its contract
 ```
+
+Drive a real AI kernel (Claude Code, Codex, OpenCode…) with a one-line config
+change — see [Quick Start](#quick-start) and [Kernel Adapters](#kernel-adapters).
 
 ---
 
@@ -50,7 +54,9 @@ contract validation → artifact registration — with the full lifecycle record
 
 Select a kernel at init (`forge init --adapter claude-code`) or later via
 `default_adapter` in `.forge/config.yaml`. `forge adapter status` shows
-availability, capabilities, and install hints for every adapter.
+availability, capabilities, and install hints for every adapter. Install all
+optional adapter backends at once with `pip install -e '.[all-adapters]'` (or
+just the ACP integration deps with `'.[acp]'`).
 
 The `claude_code` adapter additionally supports: per-spawn event-store recording
 with deterministic **replay** (`run_id` → identical handle, no subprocess),
@@ -64,6 +70,7 @@ pre-spawn gate audited to `.forge/security-audit.jsonl`, `--model`, and
 
 ```bash
 # Install (Python 3.11+)
+git clone https://github.com/tonmoy007/forge-os && cd forge-os
 pip install -e .
 
 # Initialize a project (dummy adapter — works with no AI provider)
@@ -71,7 +78,7 @@ forge init --path ./my-project --name Demo
 cd ./my-project
 forge status
 
-# Or initialize against the real Claude Code kernel
+# Or drive the real Claude Code kernel (requires the `claude` CLI on PATH)
 forge init --path ./my-project --adapter claude-code --permission-mode acceptEdits
 
 # Run the current stage's agent (SRS stage writes SRS.md, checked by contract)
@@ -96,8 +103,9 @@ forge health check        # subsystem health
 `events` (list, tail) · `gate` (list, check, report) · `adapter` (list, status) ·
 `agent` (list, contracts, run) · `lesson` (list, add, approve, deprecate) ·
 `reflection` (list, show) · `artifact` (list, register, refresh) ·
-`context` (select) · `backtrack` (list, plan, approve, run) ·
-`security` (audit) · `health` (check) · `acp` (discover, list, install, sessions, close-session)
+`context` (select, budget, lazy-stats) · `backtrack` (list, plan, approve, run) ·
+`security` (audit) · `health` (check) · `acp` (discover, list, install, sessions, close-session) ·
+`dreamer` (digest, scan, decay) · `daemon` (start, stop, status, logs, restart)
 
 ---
 
@@ -141,7 +149,7 @@ tasks/       task plans and notes
 ```bash
 pip install -e .[dev]
 
-python -m pytest                      # full suite (476 tests)
+python -m pytest                      # full suite (649 tests)
 python -m ruff check src tests       # lint (E F I UP B, line length 100)
 python -m compileall src tests       # syntax sweep
 ```

@@ -1,7 +1,7 @@
 name: CI
 
-# Mirrors the local Docker reference gate (L006): the same python:3.12-slim
-# image with freshly-resolved latest deps, running tests + lint + compile.
+# Mirrors the local Docker reference gate (L006): clean python:3.11/3.12-slim
+# images with freshly-resolved latest deps, running tests + lint + compile.
 on:
   push:
     branches: [main]
@@ -15,7 +15,11 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 15  # fail fast if a runner stalls instead of hanging
-    container: python:3.12-slim
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']  # exercise the declared requires-python floor
+    container: python:${{ matrix.python-version }}-slim
     steps:
       # git is needed by actions/checkout inside the slim image
       - name: Install git
