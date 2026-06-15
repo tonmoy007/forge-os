@@ -22,7 +22,7 @@ The project uses a `.venv/` virtualenv. Always invoke tools through it (`python`
 # Setup (first time)
 pip install -e .[dev]
 
-# Full test suite (baseline 230 passing as of Phase 09)
+# Full test suite (baseline 649 passing as of Phase 10)
 .venv/bin/python -m pytest
 
 # Single test file / single test
