@@ -1,0 +1,37 @@
+name: Perf
+
+# Runs the performance benchmark suite (tests/perf). The benchmarks assert the
+# SRS §5.1 NFR targets, so a regression that blows a budget fails this workflow.
+# Scheduled weekly + manual; kept off the per-PR path so PR CI stays fast.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"  # Mondays 06:00 UTC
+
+concurrency:
+  group: perf-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: python:3.12-slim
+    steps:
+      - name: Install git
+        run: apt-get update && apt-get install -y --no-install-recommends git
+
+      - uses: actions/checkout@v5
+
+      - name: Install package (latest deps)
+        run: pip install -e '.[dev]'
+
+      - name: Run perf benchmarks (asserts NFR targets)
+        run: python -m pytest tests/perf -m perf --benchmark-json=perf.json
+
+      - name: Upload benchmark JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-json
+          path: perf.json
