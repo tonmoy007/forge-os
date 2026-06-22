@@ -36,6 +36,7 @@ from forge_os.cli.commands.daemon import daemon_app
 from forge_os.cli.commands.dreamer import dreamer_app
 from forge_os.cli.commands.health import health_app
 from forge_os.cli.commands.lazy_context import lazy_budget, lazy_stats
+from forge_os.cli.commands.plug import plug_app
 from forge_os.cli.commands.security import security_app
 from forge_os.config.loader import ConfigError, load_config
 from forge_os.context.pruner import ContextPruner, ContextPrunerError
@@ -91,6 +92,8 @@ app.add_typer(health_app, name="health")
 app.add_typer(acp_app, name="acp")
 app.add_typer(dreamer_app, name="dreamer")
 app.add_typer(daemon_app, name="daemon")
+# Phase 11 extension management
+app.add_typer(plug_app, name="plug")
 
 # ─── Explain Topics ────────────────────────────────────────────────────────────
 
