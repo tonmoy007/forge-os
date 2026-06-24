@@ -168,6 +168,33 @@ def _codex_factory(project_root: Path, config: dict[str, object]) -> KernelAdapt
     return AsyncToSyncBridge(inner)
 
 
+def _openclaw_factory(project_root: Path, config: dict[str, object]) -> KernelAdapter:
+    gateway_command_raw = config.get("gateway_command")
+    gateway_command = (
+        [str(part) for part in gateway_command_raw]
+        if isinstance(gateway_command_raw, (list, tuple)) and gateway_command_raw
+        else None
+    )
+    # Only the stdio ACP transport (gateway_command) is wired in v0.1. Reject any
+    # other config so `forge adapter status` reports openclaw unavailable rather than
+    # constructing an adapter that cannot actually run.
+    if not gateway_command:
+        raise AdapterRegistryError(
+            "openclaw adapter requires a configured `gateway_command` (stdio ACP "
+            "transport); no gateway endpoint is configured. OpenClaw is optional — the "
+            "HTTP/WebSocket transport is deferred to P11.08. "
+            "See plan/OPENCLAW_ADAPTER_ARCHITECTURE.md."
+        )
+    from forge_os.adapters.bridge import AsyncToSyncBridge
+    from forge_os.adapters.openclaw.adapter import OpenClawAdapter
+    inner = OpenClawAdapter(
+        gateway_command=gateway_command,
+        default_model=str(config.get("model", "claude-opus-4-7")),
+        forge_dir=project_root / ".forge",
+    )
+    return AsyncToSyncBridge(inner)
+
+
 def _opencode_factory(project_root: Path, config: dict[str, object]) -> KernelAdapter:
     try:
         from forge_os.adapters.bridge import AsyncToSyncBridge
@@ -195,6 +222,7 @@ _REGISTRY.register("claude_raw", _claude_raw_factory)
 _REGISTRY.register("claude_sdk", _claude_sdk_factory)
 _REGISTRY.register("human", _human_factory)
 _REGISTRY.register("codex", _codex_factory)
+_REGISTRY.register("openclaw", _openclaw_factory)
 _REGISTRY.register("opencode", _opencode_factory)
 
 
