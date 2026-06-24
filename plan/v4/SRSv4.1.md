@@ -1,7 +1,7 @@
 # Software Requirements Specification
 ## Forge OS — Deterministic Event-Driven Engineering Runtime
-**Version 4.1 — Production-Grade Buildable SRS**
-**Date:** 2026-05-10
+**Version 4.2 — Production-Grade Buildable SRS**
+**Date:** 2026-06-24
 **Status:** Authoritative for implementation
 
 ---
@@ -10,6 +10,7 @@
 
 | Version | Date | Author | Summary |
 |---------|------|--------|---------|
+| 4.2 | 2026-06-24 | tonmoy | Added FR-HD-006 (Environment Preflight Diagnostic — `forge doctor`): install/environment readiness checks (Python runtime, virtualenv, dependencies, plus project-scoped adapter/config/write-access checks), distinct from FR-HD-001 project subsystem health. Filename held stable (`SRSv4.1.md`) to avoid breaking cross-references; this changelog table is the authoritative version record. |
 | 4.1 | 2026-05-10 | tonmoy | Three-pass hardening: truth-in-claims, reconciliation, scope-and-schedule. Added FR-KEY, FR-EVO, FR-DDB, FR-COST groups. Split into MVP / Production / Enterprise tiers. All v4.0 corrections annotated with `[v4.1: …]`. |
 | 4.0 | — | tonmoy | Added FR-IR (Engineering IR), FR-NEG (policy/governance) requirement groups. Introduced event-sourced core, shadow evaluation, cognitive observability, multi-model router, supply-chain security. |
 | 3.1 | — | tonmoy | Original SRS. FR-OE-001 through FR-TE-003. 12-stage pipeline, 16 agents, multi-modal gates, three-tier memory, ADG/LKG. |
@@ -281,6 +282,7 @@ A core tenet of Forge OS is **bounded autonomy**: any action the system can take
 | FR-HD-003 | **Token Budget Monitor** — Measures injected-context token count per session and warns if it exceeds budget. | Overages logged; pruner parameters tunable. |
 | FR-HD-004 | **System Evolution Proposals** — After N cycles, daemon may propose pipeline improvements (new gate, adjusted weights, modified skills). *[v4.1: proposals enter the Proposal boundary like any other agent output and are subject to Shadow Evaluation (§3.25) before merging.]* | Proposals presented as diffable changes; require approval per policy. |
 | FR-HD-005 | **Hook Latency Oversight** — Monitors hook execution time; persistently slow hooks flagged for optimization. *[v4.1: auto-disable requires explicit policy permission; default behavior is alert-only.]* | Alerts in health report; hooks failing repeatedly disabled per policy with notification. |
+| FR-HD-006 | **[v4.2] Environment Preflight Diagnostic** — `forge doctor` verifies the host environment can run Forge: Python runtime version, active virtualenv, and required dependencies (all **install-level**, run always); and — **when inside a project** — adapter availability (reusing the adapter-status probe), `.forge/` presence, `config.yaml` validity, and write access. Reports pass/warn/fail/info per check with a remediation hint; runnable **with or without** a project (the project-scoped block degrades to a single INFO "skipped — not in a Forge project"). Read-only — never mutates the environment. Distinct from FR-HD-001 (`forge health check`, which inspects project subsystem state). | Exits 0 when no check fails; **non-zero when any required check FAILs** — install-level always, plus project-scoped (config validity, `.forge` write access) when inside a project — with an actionable remedy; advisory conditions are WARN/INFO and never fatal; runs outside a project with project-scoped checks reported as skipped (never raises). |
 
 ### 3.9 Gradual Onboarding & Adaptation
 
