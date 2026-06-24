@@ -89,6 +89,10 @@ class ClaudeCodeAdapter(BaseKernelAdapter):
         self.hook_command = hook_command
         self._security_enforcer = security_enforcer
 
+    def bind_event_store(self, event_store: EventStore | None) -> None:
+        """Attach the project Event Store so spawns record lifecycle/cost events."""
+        self._event_store = event_store
+
     def get_default_tools(self) -> ToolList:
         return list(DEFAULT_ABSTRACT_TOOLS)
 

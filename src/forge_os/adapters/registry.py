@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from forge_os.adapters.base import BaseKernelAdapter, KernelAdapter
 from forge_os.adapters.dummy import DummyAdapter
 from forge_os.schemas.config import ForgeConfig
+
+if TYPE_CHECKING:
+    from forge_os.events.store import EventStore
 
 AdapterFactory = Callable[[Path, dict[str, object]], KernelAdapter]
 
@@ -235,14 +239,27 @@ def get_adapter_registry() -> AdapterRegistry:
     return _REGISTRY
 
 
-def create_adapter_from_config(project_root: Path, config: ForgeConfig) -> KernelAdapter:
-    """Create the selected adapter from `.forge/config.yaml`."""
+def create_adapter_from_config(
+    project_root: Path,
+    config: ForgeConfig,
+    *,
+    event_store: EventStore | None = None,
+) -> KernelAdapter:
+    """Create the selected adapter from `.forge/config.yaml`.
+
+    When `event_store` is provided it is bound to the adapter so spawn
+    lifecycle/cost events are recorded on the production path (F0). Adapters
+    that do not record ignore it (`bind_event_store` is a no-op).
+    """
     adapter_id = config.default_adapter
     adapter_config = config.adapters.get(adapter_id, {})
     enabled = adapter_config.get("enabled", adapter_id == "dummy")
     if not enabled:
         raise AdapterRegistryError(f"Configured default adapter `{adapter_id}` is disabled.")
-    return get_adapter_registry().create(adapter_id, project_root, adapter_config)
+    adapter = get_adapter_registry().create(adapter_id, project_root, adapter_config)
+    if event_store is not None:
+        adapter.bind_event_store(event_store)
+    return adapter
 
 
 def adapter_placeholder_config() -> dict[str, dict[str, object]]:

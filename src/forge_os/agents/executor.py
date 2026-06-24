@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from forge_os.adapters.registry import AdapterRegistryError, create_adapter_from_config
@@ -22,6 +23,9 @@ from forge_os.core.state_manager import utc_now
 from forge_os.events.model import new_event
 from forge_os.memory.lessons import LessonStore
 from forge_os.schemas.state import PipelineState
+
+if TYPE_CHECKING:
+    from forge_os.events.store import EventStore
 
 log = logging.getLogger("forge.agents.executor")
 
@@ -43,13 +47,16 @@ def run_stage_agent(
     means the real `~/.forge`.
     """
 
+    # F0: bind the project Event Store so the adapter records spawn lifecycle/cost
+    # events to .forge/events.db. Closed after the spawn (the only point it connects).
+    event_store = _open_event_store(project_root)
     try:
         from forge_os.config.loader import load_config
 
         config = load_config(project_root / ".forge" / "config.yaml")
         persona = persona_for_stage(project_root, stage_id)
         contract = contract_for_persona(project_root, persona)
-        adapter = create_adapter_from_config(project_root, config)
+        adapter = create_adapter_from_config(project_root, config, event_store=event_store)
     except (AgentLoadError, AdapterRegistryError, ConfigError) as exc:
         raise AgentExecutionError(str(exc)) from exc
 
@@ -74,6 +81,10 @@ def run_stage_agent(
         handle = adapter.spawn_agent(persona, context, tools)
     except AdapterRegistryError as exc:
         raise AgentExecutionError(str(exc)) from exc
+    finally:
+        # The store opens a connection only when a recording adapter appends
+        # during spawn; close it here so `forge agent run` doesn't leak it.
+        event_store.close()
     validation = validate_contract(project_root, contract)
     completed_at = utc_now()
     status = (
@@ -172,6 +183,19 @@ def _append_agent_record(project_root: Path, record: AgentRunRecord) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as log_file:
         _ = log_file.write(json.dumps(record.model_dump(), sort_keys=False) + "\n")
+
+
+def _open_event_store(project_root: Path) -> EventStore:
+    """Open the project Event Store for adapter recording (F0).
+
+    Construction is lazy — no connection opens until a recording adapter appends
+    during the spawn. Connect/append failures are swallowed by the adapter's
+    best-effort ``_safe_append``, so a recording problem degrades to no recording
+    rather than breaking the spawn. The caller closes the store after the spawn.
+    """
+    from forge_os.events.store import EventStore
+
+    return EventStore(project_root / ".forge" / "events.db")
 
 
 def _monitor_token_budget(project_root: Path, stage_id: str, selection: object) -> None:
