@@ -3,7 +3,7 @@
 > **Read order:** `/STATUS.md` → `/CLAUDE.md` → this file → the current phase file.
 >
 > **Session Continuity:** If this session is interrupted, run `git log --oneline -5 && git diff HEAD && cat plan/RESUME.md 2>/dev/null || echo "No RESUME.md"` before continuing.
-> Last validated: 671 tests passed + 3 perf benchmarks (host `.venv` + clean `python:3.12-slim` Docker, latest deps), ruff clean, compileall clean — 2026-06-15.
+> Last validated: 794 tests passed + 3 perf benchmarks (host `.venv` + clean `python:3.12-slim` Docker, latest deps), ruff clean, compileall clean — 2026-06-24 (Phase 11 complete).
 >
 > The 2026-05-13 strategic pause was lifted 2026-06-10 by owner direction ("complete next
 > phase") after the kernel-first arc (Phase 05.5) shipped and the OSS launch prep merged.
@@ -58,6 +58,46 @@ Delivered as a series of CI-gated PRs (each adversarially scoped, merged by the 
 Exit checklist: integration suite <3s; perf suite asserts NFRs; 671 tests + 3 benchmarks,
 ruff + compileall clean, clean Docker + CI.
 
+## Phase 11 — Channels, OpenClaw, Extensions: COMPLETE (2026-06-24)
+
+The final v2 ecosystem layer, delivered as one reviewable PR per slice (owner-merged).
+Decision context: **Path A** (continue local-first forge-os); the dropped-in "Aegis
+Lifecycle" enterprise roadmap was reconciled and **deferred to a future Path B** (a
+separate `aegis` service that *embeds* `forge_os`, never folds into the core) — see
+`plan/Phase-by-Phase System Upgrade and Sprint Planning/AEGIS-VS-FORGEOS-GAP-ANALYSIS.md`
+and `ADDITIVE-BACKLOG.md`. Hard owner constraint honored throughout: **never mutate the
+core** (`core/` + canonical `schemas/{config,state,security}.py` untouched); new capability
+entered only via additive files, new Phase-11 schemas, and the adapter registry.
+
+- **S1 — Extensions/plugins (PR #29, FR-EXT-001..004):** `schemas/extension.py`,
+  `extensions/{manifest,store,installer,errors}.py`, `use_cases/extensions.py`,
+  `cli/commands/plug.py` — `forge plug list/install/remove`. Permission validation is
+  fail-closed (install rejected unless the SecurityEnforcer returns ALLOWED); unsigned
+  extensions are audited; conflict→permission→signing order enforced.
+- **S2a — Channels read path (PR #30, FR-CH-001/002/003, FR-SEC-005):** `schemas/channel.py`,
+  `channels/{base,console,normalize,errors}.py` (`ChannelAdapter` Protocol + `BaseChannelAdapter`),
+  `use_cases/channels.py`, `cli/commands/channel.py` — `forge channel status/broadcast`.
+  Status query is byte-for-byte read-only (regression-guarded).
+- **S2b — Channels write path (PR #31, FR-CH-004/005, P11.05/07):** identity binding
+  (`channels/identity.py`, one-time pairing, refuse-rebind), default-deny channel action
+  policy (`channels/policy.py`, only `status`/`feedback` allowed unbound), feedback intake
+  with dedup + rate-limit (`channels/intake.py`) — `forge channel feedback/pair/confirm`.
+- **S3 — OpenClaw adapter (PR #33, FR-OCA-001..006):** `schemas/openclaw.py`,
+  `adapters/openclaw/{adapter,channel}.py` — optional `OpenClawAdapter(IKernelAdapter)` on the
+  Phase 08 ACP foundation (reuses `ACPClient` session list/resume/close + `session/update`
+  streaming), persona→SOUL/IDENTITY/system-prompt, SecurityEnforcer-gated default-deny tool
+  policy, webhook→Forge-event bridge, memory-separation guard (canonicalized; refuses
+  protected/absolute/tree-escaping targets), offline fallback (unreachable → normalized
+  `AGENT_FAILED`, state untouched). Interface + documented placeholders + mock tests only —
+  no OpenClaw wire protocol invented (HTTP/WS transport deferred to P11.08). Registered behind
+  a `gateway_command` guard; surfaced via the existing `AdapterUseCases.status` path.
+
+Each slice: SRS-traced `tasks/todo.md` gate, layer gates clean (domain↛cli; schemas pure),
+core-untouched verified, adversarially reviewed (Workflow + JSON schema, per-finding
+verification — S3 fixed 9 confirmed findings incl. the `is_protected_path` canonicalization in
+L009), and Docker-validated. **794 tests pass** (host `.venv` + clean `python:3.12-slim`),
+ruff + compileall clean.
+
 ## Active Work: Phase 05.5 (kernel-first, D5=B)
 
 Per D5=B (open-source kernel-first sequencing), tactical work resumed on the **kernel adapter layer** ahead of Phase 10. Landed (2026-06-08, PRs #1 + #2):
@@ -90,17 +130,19 @@ Per D5=B (open-source kernel-first sequencing), tactical work resumed on the **k
 
 ## Next Phase
 
-- Phase: 11 (Channel adapters, OpenClaw, extension/plugin system)
-- File: `plan/PHASE-11-channels-openclaw-extensions.md`
-- Status: **not started** — owner go/no-go recommended before starting (D4 adopter/contributor
-  question in `/STATUS.md` remains open; Phase 11 is outward-facing surface area).
+- Phase: 13 (Documentation & Release Engineering) — the last remaining roadmap phase.
+- File: `plan/PHASE-13-docs-release-engineering.md`
+- Status: **not started** — owner go/no-go recommended (Fork B; outward-facing release surface).
+  Phases 00–12 are now complete; only Phase 13 and the conditional Fork-A `A1` (commitgate
+  extract) remain in the index.
 
 ## Last Completed Phase
 
-- Phase: 12 (Integration & Performance Testing)
-- File: `plan/PHASE-12-integration-perf-testing.md`
-- Status: complete (2026-06-15) — core delivered; P12.09 (daemon RAM) and the run-over-run
-  perf-regression detector deferred with documented rationale (lessons L008).
+- Phase: 11 (Channels, OpenClaw, extension/plugin system)
+- File: `plan/PHASE-11-channels-openclaw-extensions.md`
+- Status: complete (2026-06-24) — S1 extensions (#29), S2a/S2b channels (#30/#31), S3 OpenClaw
+  (#33). OpenClaw shipped as interface + documented placeholders + mock tests (HTTP/WS transport
+  deferred to P11.08); core untouched throughout.
 
 ## Discipline & Clean Code Enforcement (Phase 08+)
 

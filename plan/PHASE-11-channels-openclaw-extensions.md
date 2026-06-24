@@ -2,7 +2,9 @@
 
 ## Status
 
-not-started
+complete (2026-06-24) — S1 extensions (#29), S2a/S2b channels (#30/#31), S3 OpenClaw (#33).
+OpenClaw delivered as interface + documented placeholders + mock tests (HTTP/WS transport
+deferred to P11.08). Core untouched throughout. 794 tests pass (host + clean Docker).
 
 ## Objective
 
@@ -122,15 +124,15 @@ Key Phase 08 ACP components reused in Phase 11:
 
 ## Exit Checklist
 
-- [ ] Channel interface works
-- [ ] Channel status/feedback/release workflows work
-- [ ] OpenClawAdapter implemented or blocked only on concrete endpoint/auth/webhook details
-- [ ] OpenClaw reuses Phase 08 ACP components where applicable
-- [ ] Extension manifest works
-- [ ] Local plug commands work
-- [ ] Permission validation works
-- [ ] Tests pass
-- [ ] v2 definition of done reviewed
+- [x] Channel interface works — `ChannelAdapter` Protocol + `BaseChannelAdapter` + console (S2a)
+- [x] Channel status/feedback/release workflows work — `forge channel status/broadcast/feedback/pair/confirm` (S2a/S2b)
+- [x] OpenClawAdapter implemented or blocked only on concrete endpoint/auth/webhook details — interface + mocks done; HTTP/WS transport blocked solely on the P11.08 endpoint contract (S3)
+- [x] OpenClaw reuses Phase 08 ACP components where applicable — `ACPClient` session list/resume/close + `session/update` streaming (S3)
+- [x] Extension manifest works — `schemas/extension.py` + `extensions/manifest.py` (S1)
+- [x] Local plug commands work — `forge plug list/install/remove` (S1)
+- [x] Permission validation works — fail-closed install gate via SecurityEnforcer; unsigned audited (S1)
+- [x] Tests pass — 794 (host `.venv` + clean `python:3.12-slim` Docker), ruff + compileall clean
+- [x] v2 definition of done reviewed — each slice adversarially reviewed (Workflow + JSON schema, per-finding verification); S3's 9 confirmed findings fixed
 
 ## Suggested Next Prompt
 

@@ -57,6 +57,28 @@
 - **Rule:** Before building a parser/adapter over any external CLI/API, capture **one real sample** of its output (and confirm its flags via `--help`) and commit it as a gold-standard fixture. Add at least one test that runs the *real captured output* through the parser, not only synthetic fixtures. Verify the contract at the boundary **before** building layers on it — finding a wrong contract early (in isolated code) is far cheaper than after it's wired into the CLI, security, and replay.
 - **Files affected:** `adapters/claude_code/runner.py` (flags + parser rewrite), `adapters/claude_code/adapter.py` (drop `max_turns`, record real usage/cost), `tests/fixtures/claude_code/real_text_run.jsonl` (new gold capture), `tests/test_adapters_claude_code.py` + `tests/test_adapters_claude_code_replay.py` (real-schema fixtures), `plan/PHASE-05.5-claude-code-adapter.md` (corrected contract).
 
+### L009 — A path/membership guard over untrusted input must canonicalize before comparing — string matching is bypassable
+- **Date:** 2026-06-24
+- **Trigger:** Phase 11 S3 adversarial review (Workflow + schema) found the OpenClaw
+  memory-separation guard `is_protected_path` did exact-string / prefix matching after only
+  stripping a leading `./`. It returned False for `.forge/../.forge/state.json`, `.forge//state.json`,
+  and `/abs/.forge/state.json`, so `sync_insights_back` *accepted* an insight targeting a
+  protected source-of-truth file (FR-OCA-005). The mock tests passed because they encoded only the
+  canonical spelling on both sides. The project's own `security.md` already says "reject `../`
+  sequences, use allowlists" — the guard violated a standing rule.
+- **Root cause:** Treated a security-relevant path check as a string-membership test instead of a
+  path-equivalence test. `str.lstrip("./")` also silently mangled `.forge/...` → `forge/...` (it
+  strips a *char set*, not a prefix), defeating even the canonical case until caught in build.
+- **Rule:** Any guard that decides access/refusal from an untrusted path or identifier MUST
+  canonicalize first: normalize separators, collapse `.`/`..` via `posixpath.normpath`, and reject
+  absolute or tree-escaping forms (`startswith("/")`, `normpath` still containing `..`) before the
+  membership/prefix check. Never use `lstrip`/`rstrip` to remove a *prefix*. Back fail-closed
+  guards with regression tests for every evasion spelling (`..`, absolute, `//`, trailing space),
+  not just the canonical one — mock-only tests that share the wrong assumption on both sides prove
+  nothing (cf. L007).
+- **Files affected:** `adapters/openclaw/adapter.py` (`canonical_relpath` + `is_protected_path` +
+  `sync_insights_back`), `tests/test_adapters_openclaw.py`.
+
 ### L008 — Phase 12: guard perf NFRs with absolute-threshold benchmarks; defer process-RAM and run-over-run detection (documented gaps)
 - **Date:** 2026-06-15
 - **Trigger:** Phase 12 acceptance explicitly permits a written rationale (here) for any NFR target left unmeasured. Two P12 items were deferred rather than built out.

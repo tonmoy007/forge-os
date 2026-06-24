@@ -73,11 +73,11 @@ The project is built phase by phase in strict order. Do not implement future-pha
 | 07 | `plan/PHASE-07-adg-context.md` | ADG, context pruning | ✅ |
 | 08 | `plan/PHASE-08-backtrack-security.md` | Backtrack, security, ACP | ✅ |
 | 08.5 | `plan/PHASE-08.5-async-cocoindex.md` | Async migration, CocoIndex, Event Store | ✅ |
-| **09** | **`plan/PHASE-09-health-global-skills.md`** | **Health, global memory, skills** | **✅** |
-| **10** | **`plan/PHASE-10-daemon-dreamer-lazy-context.md`** | **Daemon, Dreamer, lazy context** | **🔲** |
-| 11 | `plan/PHASE-11-channels-openclaw-extensions.md` | Channels, OpenClaw, plugins | 🔲 not-started |
-| 12 | `plan/PHASE-12-integration-perf-testing.md` | Integration tests, perf baseline, NFR validation | 🔲 not-started (Fork B) |
-| 13 | `plan/PHASE-13-docs-release-engineering.md` | User docs, packaging, release automation | 🔲 not-started (Fork B) |
+| 09 | `plan/PHASE-09-health-global-skills.md` | Health, global memory, skills | ✅ |
+| 10 | `plan/PHASE-10-daemon-dreamer-lazy-context.md` | Daemon, Dreamer, lazy context | ✅ |
+| 11 | `plan/PHASE-11-channels-openclaw-extensions.md` | Channels, OpenClaw, plugins | ✅ |
+| 12 | `plan/PHASE-12-integration-perf-testing.md` | Integration tests, perf baseline, NFR validation | ✅ |
+| **13** | **`plan/PHASE-13-docs-release-engineering.md`** | **User docs, packaging, release automation** | **🔲 not-started (Fork B)** |
 | A1 | `plan/fork-a/PHASE-A1-commitgate-extract.md` | Carve Proposal/Validator/Executor + Event Store as `commitgate` library | 🔲 conditional (Fork A only) |
 
 ### Status Legend
