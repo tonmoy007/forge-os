@@ -1,27 +1,28 @@
-# tasks/todo.md — CLI + Observability Backlog (post-Phase-11)
+# tasks/todo.md — CLI + Observability Backlog (post-Phase-11) — COMPLETE 2026-06-24
 
 > Source of scope: `plan/SCOPE-doctor-and-token-budget-cli.md` + `plan/SCOPE-observability-cost-backlog.md`
-> (planning PR #35, merged 2026-06-24). Build order: **doctor → health knowledge** → per-session
-> monitor → F0 wiring → forge cost. Build-later (gated): doctor --fix, always-on monitor, OTLP.
-> Owner constraint still in force: never mutate the core; one owner-merged PR per slice.
+> (planning PR #35, merged 2026-06-24). All build-now items shipped as one owner-merged PR per slice;
+> **core untouched** throughout; each adversarially reviewed (Workflow + JSON schema, per-finding
+> verification) and host + clean `python:3.12-slim` Docker validated. **893 tests pass**, ruff +
+> compileall clean.
 
-## PR-1 — `forge doctor` (FR-HD-006) — IN REVIEW
-Environment/install preflight diagnostic, distinct from FR-HD-001 `forge health check`.
+## Delivered (all merged to main)
 
-1. **SRS:** NEW **FR-HD-006** (§3.8). SRS bumped **4.1 → 4.2** + changelog row (doc-edit-first). ✅
-2. **Files (additive + 1 main.py line):**
-   - NEW `schemas/doctor.py` (`DoctorStatus`, `DoctorCheck`, `DoctorReport` — pure pydantic). ✅
-   - NEW `health/doctor.py` (`EnvironmentDoctor`: python/venv/install/deps + project config/writable). ✅
-   - NEW `use_cases/doctor.py` (`DoctorUseCases`: composes domain doctor + reuses `AdapterUseCases.status()`; best-effort project resolution; never raises). ✅
-   - NEW `cli/commands/doctor.py` (`doctor_app`, `forge doctor [--path] [--json]`, exit-code). ✅
-   - MODIFY `cli/main.py` — import + `app.add_typer(doctor_app, name="doctor")`. ✅
-   - TESTS: `tests/test_health_doctor.py`, `tests/test_use_cases_doctor.py`, `tests/test_cli_doctor.py` (25). ✅
-3. **Verify:** 25 new unit tests (exit-code matrix, monkeypatched FAIL/WARN, no-project degrade-to-INFO, `--json` parse, broken-config-doesn't-raise); full suite **819 passed**; ruff + compileall clean; layer gates clean (health↛use_cases verified — adapter reuse lives in the use case; schemas pure; no new state.json/forge_dir hit); live `forge doctor` smoke in/out of project + `--json`. Docker (`python:3.12-slim`) validation. Adversarial Workflow review (5 dims × per-finding verify).
-4. **What breaks:** nothing existing — new top-level command. Inside a project it reuses already-tested `AdapterUseCases`/`load_config`; outside one it must NOT call them (handled via best-effort resolution). Host-dependent env introspection guarded by injection/monkeypatch for determinism.
+| PR | Feature | SRS | Notes |
+|----|---------|-----|-------|
+| #36 | `forge doctor` — environment/install preflight | **NEW FR-HD-006** (SRS 4.1→4.2) | distinct from FR-HD-001 project health; Docker caught a host-masked `click` dep bug → **L010** |
+| #37 | `forge health knowledge` — integrity + artifact budget | existing FR-HD-002 | surfaces the orphaned `KnowledgeUseCases`; review fixed a traceback/path-leak on a corrupt store |
+| #38 | Per-session token budget monitor | FR-HD-003 + FR-TE-003 | `context/token_monitor.py` + `TokenBudgetExceeded` event, wired sync+async; review fixed a dual-`ConfigError` spawn-break → **L011** |
+| #39 | F0 — Event Store wired into the production spawn path | enables FR-TE-001 | `bind_event_store` seam; a real `forge agent run` now records spawn cost events |
+| #40 | `forge cost` — token/$ by stage from recorded events | FR-TE-001/004, FR-COST-002 | joins Started→Completed by `run_id`; review hardened the untrusted-`events.db` read path (9 fixes) |
 
-## PR-2 — `forge health knowledge` (FR-HD-002) — NEXT
-Surface the orphaned `KnowledgeUseCases` (integrity scans + artifact-budget aggregate) on the
-existing `health_app`. Existing requirement — no SRS bump.
+## Build-later — gated (no work without owner go; SRS step noted)
+
+| Item | SRS | Why gated |
+|------|-----|-----------|
+| `forge doctor --fix` (guarded auto-remediation) | **NEW FR-HD-007** (needs SRS bump) | depends on `forge doctor` (now shipped); owner accepted the scope ("will do for now") but has not greenlit the build |
+| Always-on daemon monitor (budget/latency/cost-cap) | FR-HD-003/005, FR-COST-004 | needs a hook-timing prereq; FR-COST-004 "% of production budget" is unimplementable as written (no such field) |
+| OTLP dual-stream tracing | FR-OBS-001, FR-SEM-002 | Production-tier, optional dep, MVP subset only — a local CLI can't deliver dashboard/network spans |
 
 ---
 
