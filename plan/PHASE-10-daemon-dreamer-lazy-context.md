@@ -2,7 +2,8 @@
 
 ## Status
 
-in-progress
+complete (2026-06-10) — see `plan/CURRENT_PHASE.md` "Phase 10 ... COMPLETE" (WS-A daemon #16,
+WS-B Dreamer #15, WS-C Observer/ACP #18, WS-D lazy context #17).
 
 ## Objective
 
@@ -206,17 +207,17 @@ Daemon initializes
 
 ## Exit Checklist
 
-- [ ] Daemon commands work (`forge daemon start/stop/status/logs`)
-- [ ] Daemon persists state across restarts
-- [ ] Dreamer digest works
-- [ ] Lesson decay works
-- [ ] Observer stub works
-- [ ] Lazy context works
-- [ ] ACP agent health monitoring runs as daemon task
-- [ ] Auto-recovery of failed ACP agents works
-- [ ] Daemon ACP metrics persisted
-- [ ] Tests pass
-- [ ] `CURRENT_PHASE.md` updated to Phase 11
+- [x] Daemon commands work (`forge daemon start/stop/status/logs`) — WS-A (#16)
+- [x] Daemon persists state across restarts — `DaemonStateStore` atomic (#16)
+- [x] Dreamer digest works — WS-B (#15)
+- [x] Lesson decay works — exponential decay + dormancy (#15)
+- [x] Observer stub works — WS-C behind `features.observer` (#18)
+- [x] Lazy context works — WS-D skill menu + budget guard (#17)
+- [x] ACP agent health monitoring runs as daemon task — WS-C (#18)
+- [x] Auto-recovery of failed ACP agents works — one-attempt restart (#18)
+- [x] Daemon ACP metrics persisted — `daemon/metrics.json` (#18)
+- [x] Tests pass — 649 at Phase 10 close (now 794 at Phase 11)
+- [x] `CURRENT_PHASE.md` updated — has since advanced past Phase 11 (now points to Phase 13)
 
 ## Notes For The Implementer
 

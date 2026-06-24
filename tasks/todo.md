@@ -67,13 +67,31 @@ plugins without touching the core.
 - [x] S1 extensions → PR #29 (merged) — `extensions/` + `schemas/extension.py` + `forge plug`
 - [x] S2a channels read path → PR #30 (merged) — interface/console/normalize/status/broadcast
 - [x] S2b channels write path → PR #31 (merged) — identity binding, default-deny, feedback, rate-limit
-- [x] S3 openclaw (iface+mocks) → PR `feat/phase11-openclaw` (open) — `adapters/openclaw/` +
-      `schemas/openclaw.py`, registry factory; surfaced via existing `AdapterUseCases.status`
-      (no `use_cases/openclaw.py` needed — every kernel adapter is surfaced this way). 42 tests.
-- [ ] Integration: CURRENT_PHASE → Phase 11 complete, exit checklist, RESUME refresh, lessons
+- [x] S3 openclaw (iface+mocks) → PR #33 (merged) — `adapters/openclaw/` + `schemas/openclaw.py`,
+      registry factory; surfaced via existing `AdapterUseCases.status` (no `use_cases/openclaw.py`
+      needed — every kernel adapter is surfaced this way). 50 tests; 9 review findings fixed.
+- [x] Integration/closeout: `CURRENT_PHASE.md` → Phase 11 complete; `AGENTS.md §2` index
+      (10/11/12 → ✅); PHASE-11 exit checklist ticked; `tasks/lessons.md` L009; `plan/RESUME.md`
+      refreshed.
 
 ## Review section (phase wrap)
-_(filled at phase end)_
+
+**Phase 11 complete — 2026-06-24.** Channels, OpenClaw, and the extension/plugin system shipped
+as four owner-merged PRs (#29, #30, #31, #33), Path A (local-first), **core never mutated**.
+
+- **Outcome:** `forge plug list/install/remove`, `forge channel status/broadcast/feedback/pair/
+  confirm`, and an optional `OpenClawAdapter` on the Phase 08 ACP foundation. 794 tests pass
+  (host + clean `python:3.12-slim` Docker), ruff + compileall clean.
+- **Discipline held:** SRS-traced per-slice gate; layer gates clean (domain↛cli, schemas pure);
+  every slice adversarially reviewed (Workflow + JSON schema, per-finding verification) and
+  Docker-validated; one reviewable PR per slice for owner merge.
+- **What worked:** the Workflow+schema review caught 9 real S3 defects mock-only tests missed —
+  notably a path-guard canonicalization bypass (now L009) and a malformed-payload escape.
+- **Deferred (documented):** OpenClaw HTTP/WebSocket transport + auth + webhook payloads (P11.08)
+  pending a concrete OpenClaw endpoint contract — interface, ACP-stdio transport, and mock tests
+  ship now; no wire protocol was invented.
+- **Next:** Phase 13 (docs & release engineering) is the last remaining roadmap phase; owner
+  go/no-go recommended (Fork B).
 
 ---
 
