@@ -17,6 +17,7 @@ from forge_os.config.loader import ConfigError
 from forge_os.context.lazy import LazyContextBuilder, LazyContextError
 from forge_os.context.pruner import ContextPruner, ContextPrunerError
 from forge_os.context.registry import ArtifactRegistry, ArtifactRegistryError
+from forge_os.context.token_monitor import evaluate_session_budget, resolve_warn_ratio
 from forge_os.core.state_manager import utc_now
 from forge_os.events.model import new_event
 from forge_os.memory.lessons import LessonStore
@@ -58,6 +59,7 @@ def run_stage_agent(
         context_selection = ContextPruner(project_root).select(stage_id, token_budget=2000)
     except ContextPrunerError as exc:
         raise AgentExecutionError(str(exc)) from exc
+    _monitor_token_budget(project_root, stage_id, context_selection)
     context = _stage_context(
         project_root,
         state,
@@ -172,6 +174,60 @@ def _append_agent_record(project_root: Path, record: AgentRunRecord) -> None:
         _ = log_file.write(json.dumps(record.model_dump(), sort_keys=False) + "\n")
 
 
+def _monitor_token_budget(project_root: Path, stage_id: str, selection: object) -> None:
+    """Grade the stage's injected-context budget; log + record an event on overage.
+
+    Best-effort observability (FR-HD-003 / FR-TE-003): it must NEVER break a spawn,
+    so a missing config or an event-write failure degrades to a log line.
+    """
+    from forge_os.config.loader import load_config
+    from forge_os.events.log import append_event
+
+    try:
+        features = load_config(project_root / ".forge" / "config.yaml").features
+    except Exception as exc:  # noqa: BLE001 — best-effort: a degraded config must never break a spawn
+        # load_config can raise EITHER config.loader.ConfigError (RuntimeError) OR a
+        # validator-raised schemas.config.ConfigError (a plain Exception, NOT wrapped in
+        # ValidationError) — plus OSError. A narrow catch misses one and aborts the
+        # async spawn (where this is the only config load). See L011.
+        log.warning("Token monitor could not load config for stage %s: %s", stage_id, exc)
+        features = {}
+
+    total_tokens = getattr(selection, "total_tokens", 0)
+    token_budget = getattr(selection, "token_budget", 0)
+    evaluation = evaluate_session_budget(
+        total_tokens, token_budget, warn_ratio=resolve_warn_ratio(features)
+    )
+    if evaluation.level == "ok":
+        return
+
+    log.warning(
+        "Injected-context token budget %s for stage %s: %d/%d tokens (%.0f%%)",
+        evaluation.level,
+        stage_id,
+        evaluation.total_tokens,
+        evaluation.token_budget,
+        evaluation.ratio * 100,
+    )
+    event = new_event(
+        "TokenBudgetExceeded",
+        stage_id=stage_id,
+        actor_type="core",
+        actor_id="context-pruner",
+        payload={
+            "level": evaluation.level,
+            "total_tokens": evaluation.total_tokens,
+            "token_budget": evaluation.token_budget,
+            "ratio": round(evaluation.ratio, 4),
+            "selection_id": getattr(selection, "selection_id", None),
+        },
+    )
+    try:
+        append_event(project_root / ".forge" / "events.jsonl", event)
+    except OSError as exc:
+        log.warning("Failed to record TokenBudgetExceeded event for stage %s: %s", stage_id, exc)
+
+
 def _append_agent_event(project_root: Path, record: AgentRunRecord) -> None:
     from forge_os.events.log import append_event
 
@@ -220,6 +276,7 @@ async def run_stage_agent_async(
         context_selection = ContextPruner(project_root).select(stage_id, token_budget=2000)
     except ContextPrunerError as exc:
         raise AgentExecutionError(str(exc)) from exc
+    _monitor_token_budget(project_root, stage_id, context_selection)
     context = _stage_context(
         project_root,
         state,

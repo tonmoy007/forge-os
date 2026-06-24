@@ -39,6 +39,8 @@ EventType = Literal[
     "MetricThresholdGateEvaluated",
     # Event Store dual-write event types
     "StateSaved",
+    # Observability event types
+    "TokenBudgetExceeded",
 ]
 
 
