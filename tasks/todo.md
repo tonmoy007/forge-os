@@ -1,4 +1,31 @@
-# tasks/todo.md — Phase 11: Channels, OpenClaw, Extensions
+# tasks/todo.md — CLI + Observability Backlog (post-Phase-11)
+
+> Source of scope: `plan/SCOPE-doctor-and-token-budget-cli.md` + `plan/SCOPE-observability-cost-backlog.md`
+> (planning PR #35, merged 2026-06-24). Build order: **doctor → health knowledge** → per-session
+> monitor → F0 wiring → forge cost. Build-later (gated): doctor --fix, always-on monitor, OTLP.
+> Owner constraint still in force: never mutate the core; one owner-merged PR per slice.
+
+## PR-1 — `forge doctor` (FR-HD-006) — IN REVIEW
+Environment/install preflight diagnostic, distinct from FR-HD-001 `forge health check`.
+
+1. **SRS:** NEW **FR-HD-006** (§3.8). SRS bumped **4.1 → 4.2** + changelog row (doc-edit-first). ✅
+2. **Files (additive + 1 main.py line):**
+   - NEW `schemas/doctor.py` (`DoctorStatus`, `DoctorCheck`, `DoctorReport` — pure pydantic). ✅
+   - NEW `health/doctor.py` (`EnvironmentDoctor`: python/venv/install/deps + project config/writable). ✅
+   - NEW `use_cases/doctor.py` (`DoctorUseCases`: composes domain doctor + reuses `AdapterUseCases.status()`; best-effort project resolution; never raises). ✅
+   - NEW `cli/commands/doctor.py` (`doctor_app`, `forge doctor [--path] [--json]`, exit-code). ✅
+   - MODIFY `cli/main.py` — import + `app.add_typer(doctor_app, name="doctor")`. ✅
+   - TESTS: `tests/test_health_doctor.py`, `tests/test_use_cases_doctor.py`, `tests/test_cli_doctor.py` (25). ✅
+3. **Verify:** 25 new unit tests (exit-code matrix, monkeypatched FAIL/WARN, no-project degrade-to-INFO, `--json` parse, broken-config-doesn't-raise); full suite **819 passed**; ruff + compileall clean; layer gates clean (health↛use_cases verified — adapter reuse lives in the use case; schemas pure; no new state.json/forge_dir hit); live `forge doctor` smoke in/out of project + `--json`. Docker (`python:3.12-slim`) validation. Adversarial Workflow review (5 dims × per-finding verify).
+4. **What breaks:** nothing existing — new top-level command. Inside a project it reuses already-tested `AdapterUseCases`/`load_config`; outside one it must NOT call them (handled via best-effort resolution). Host-dependent env introspection guarded by injection/monkeypatch for determinism.
+
+## PR-2 — `forge health knowledge` (FR-HD-002) — NEXT
+Surface the orphaned `KnowledgeUseCases` (integrity scans + artifact-budget aggregate) on the
+existing `health_app`. Existing requirement — no SRS bump.
+
+---
+
+# Archive: Phase 11 — Channels, OpenClaw, Extensions — COMPLETE 2026-06-24
 
 > Phase 12 (integration & perf testing) complete 2026-06-15 (PRs #24–#28).
 > Owner directed Phase 11 start 2026-06-22 (Path A: continue local-first forge-os; Path B —
