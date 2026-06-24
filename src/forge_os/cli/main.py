@@ -33,6 +33,7 @@ from forge_os.agents.loader import AgentLoadError, load_contracts, load_personas
 from forge_os.cli.commands.acp import acp_app
 from forge_os.cli.commands.backtrack import backtrack_app
 from forge_os.cli.commands.channel import channel_app
+from forge_os.cli.commands.cost import cost_app
 from forge_os.cli.commands.daemon import daemon_app
 from forge_os.cli.commands.doctor import doctor_app
 from forge_os.cli.commands.dreamer import dreamer_app
@@ -95,6 +96,7 @@ app.add_typer(acp_app, name="acp")
 app.add_typer(dreamer_app, name="dreamer")
 app.add_typer(daemon_app, name="daemon")
 app.add_typer(doctor_app, name="doctor")
+app.add_typer(cost_app, name="cost")
 # Phase 11 extension management + channels
 app.add_typer(plug_app, name="plug")
 app.add_typer(channel_app, name="channel")
