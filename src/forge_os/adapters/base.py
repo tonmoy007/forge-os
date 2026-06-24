@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -11,6 +11,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from forge_os.agents.models import AgentDefinition, OutputArtifact
 from forge_os.events.model import LifecycleEvent
 from forge_os.schemas.state import PipelineState
+
+if TYPE_CHECKING:
+    from forge_os.events.store import EventStore
 
 ToolList = list[str]
 
@@ -65,6 +68,14 @@ class KernelAdapter(Protocol):
 
     def supports(self, capability: str) -> bool:
         """Return whether an optional runtime capability is available."""
+        ...
+
+    def bind_event_store(self, event_store: EventStore | None) -> None:
+        """Attach an Event Store so spawns record lifecycle/cost events.
+
+        No-op for adapters that do not record. Called on the production spawn
+        path so a real `forge agent run` records to `.forge/events.db`.
+        """
         ...
 
     # ── ACP Integration (Phase 08) ────────────────────────────────────────
@@ -123,6 +134,10 @@ class BaseKernelAdapter:
 
     def get_default_tools(self) -> ToolList:
         return []
+
+    def bind_event_store(self, event_store: EventStore | None) -> None:
+        """No-op by default; recording adapters override to capture the store."""
+        return None
 
     # ── ACP Integration (Phase 08) ────────────────────────────────────────
 
