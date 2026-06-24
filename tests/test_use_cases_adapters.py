@@ -51,6 +51,14 @@ class TestAdapterStatus:
         # (claude/codex may or may not be installed) — L001 test isolation.
         with patch("shutil.which", return_value=None):
             statuses = _by_id(tmp_path)
-        assert statuses["openclaw"].available is False
-        assert statuses["openclaw"].reason == "not implemented"
+        # local_llm is still a registered-but-unimplemented placeholder.
         assert statuses["local_llm"].available is False
+        assert statuses["local_llm"].reason == "not implemented"
+
+    def test_openclaw_registered_but_needs_gateway(self, tmp_path: Path) -> None:
+        # Phase 11 S3: openclaw is now implemented but unavailable until a gateway
+        # endpoint is configured — it is no longer a "not implemented" placeholder.
+        with patch("shutil.which", return_value=None):
+            openclaw = _by_id(tmp_path)["openclaw"]
+        assert openclaw.available is False
+        assert "gateway endpoint" in openclaw.reason

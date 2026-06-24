@@ -64,11 +64,12 @@ plugins without touching the core.
 - ruff: no `l`/`O`/`I` names (L002); WAL+synchronous=NORMAL if any sqlite (L003).
 
 ## Status
-- [ ] Design fanout — 3 parallel architect agents (extensions / channels / openclaw)
-- [ ] Synthesize blueprints; lock interfaces + shared `main.py` integration order
-- [ ] S1 extensions → PR (implement → gates → adversarial review → fix)
-- [ ] S2 channels → PR
-- [ ] S3 openclaw (iface+mocks) → PR
+- [x] S1 extensions → PR #29 (merged) — `extensions/` + `schemas/extension.py` + `forge plug`
+- [x] S2a channels read path → PR #30 (merged) — interface/console/normalize/status/broadcast
+- [x] S2b channels write path → PR #31 (merged) — identity binding, default-deny, feedback, rate-limit
+- [x] S3 openclaw (iface+mocks) → PR `feat/phase11-openclaw` (open) — `adapters/openclaw/` +
+      `schemas/openclaw.py`, registry factory; surfaced via existing `AdapterUseCases.status`
+      (no `use_cases/openclaw.py` needed — every kernel adapter is surfaced this way). 42 tests.
 - [ ] Integration: CURRENT_PHASE → Phase 11 complete, exit checklist, RESUME refresh, lessons
 
 ## Review section (phase wrap)
