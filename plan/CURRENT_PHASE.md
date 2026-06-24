@@ -3,7 +3,7 @@
 > **Read order:** `/STATUS.md` → `/CLAUDE.md` → this file → the current phase file.
 >
 > **Session Continuity:** If this session is interrupted, run `git log --oneline -5 && git diff HEAD && cat plan/RESUME.md 2>/dev/null || echo "No RESUME.md"` before continuing.
-> Last validated: 794 tests passed + 3 perf benchmarks (host `.venv` + clean `python:3.12-slim` Docker, latest deps), ruff clean, compileall clean — 2026-06-24 (Phase 11 complete).
+> Last validated: 893 tests passed + 3 perf benchmarks (host `.venv` + clean `python:3.12-slim` Docker, latest deps), ruff clean, compileall clean — 2026-06-24 (Phase 11 + the post-Phase-11 CLI/Observability backlog complete; see the section below).
 >
 > The 2026-05-13 strategic pause was lifted 2026-06-10 by owner direction ("complete next
 > phase") after the kernel-first arc (Phase 05.5) shipped and the OSS launch prep merged.
@@ -97,6 +97,43 @@ core-untouched verified, adversarially reviewed (Workflow + JSON schema, per-fin
 verification — S3 fixed 9 confirmed findings incl. the `is_protected_path` canonicalization in
 L009), and Docker-validated. **794 tests pass** (host `.venv` + clean `python:3.12-slim`),
 ruff + compileall clean.
+
+## CLI + Observability Backlog (post-Phase-11): COMPLETE (2026-06-24)
+
+A scoped backlog after Phase 11, planned in PR #35 (two trace-verified scope docs) and delivered
+as one owner-merged PR per slice. Hard constraint honored: **never mutate the core** (`core/` +
+canonical `schemas/{config,state,security}.py` untouched); each entered via additive files + one
+`app.add_typer` line. Every slice was adversarially reviewed (Workflow + JSON schema, per-finding
+verification) and host + clean `python:3.12-slim` Docker validated.
+
+- **`forge doctor` (PR #36, NEW FR-HD-006, SRS 4.1→4.2):** environment/install preflight
+  (`schemas/doctor.py`, `health/doctor.py::EnvironmentDoctor`, `use_cases/doctor.py`,
+  `cli/commands/doctor.py`) — distinct from FR-HD-001 project health; reuses
+  `AdapterUseCases.status()`. Docker-first caught a host-masked dep bug (`click` is no longer a Typer
+  dep) → **L010**.
+- **`forge health knowledge` (PR #37, FR-HD-002):** surfaces the orphaned `KnowledgeUseCases`
+  (integrity scans + artifact token-budget) on `health_app`; review fixed a raw-traceback/path-leak
+  on a corrupt store (caught the stores' shared `RuntimeError` base).
+- **Per-session token monitor (PR #38, FR-HD-003 + FR-TE-003):** `context/token_monitor.py` pure
+  evaluator + a `TokenBudgetExceeded` event, wired into the sync *and* async spawn paths
+  (best-effort; never breaks a spawn). Review caught a dual-`ConfigError` spawn-break → **L011**.
+- **F0 — adapter event recording (PR #39, enables FR-TE-001):** `bind_event_store` seam on
+  `BaseKernelAdapter` + `create_adapter_from_config(*, event_store=...)`; the sync `run_stage_agent`
+  now binds the project Event Store so a real `forge agent run` records spawn cost/usage events
+  (previously recorded only in tests). Only `ClaudeCodeAdapter` records; the async path
+  (`AsyncDummyAdapter`) is out of scope by design.
+- **`forge cost` (PR #40, FR-TE-001/004, FR-COST-002):** read-only token/$ aggregation by stage
+  (`schemas/cost.py`, `use_cases/cost.py`, `cli/commands/cost.py`), joining
+  `AdapterSpawnStarted`→`Completed` by `run_id`. Honest: source-adapter labeled, `None` cost shown
+  as "no pricing" (never faked 0), shadow/canary + Dreamer streams reported "no data source yet".
+  Review hardened the untrusted-`events.db` read path (9 fixes: malformed-JSON/non-dict/non-string
+  rows degrade instead of crashing; no read-only DB creation; consistent rounding).
+
+Gated/build-later (no work without owner go): **`forge doctor --fix`** (NEW FR-HD-007, needs an SRS
+bump), the **always-on daemon monitor** (FR-HD-003/005, FR-COST-004), and **OTLP tracing**
+(FR-OBS-001, FR-SEM-002, optional dep). See `tasks/todo.md` and `plan/SCOPE-observability-cost-backlog.md`.
+
+**893 tests pass** (host `.venv` + clean `python:3.12-slim` Docker), ruff + compileall clean.
 
 ## Active Work: Phase 05.5 (kernel-first, D5=B)
 
