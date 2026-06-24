@@ -34,6 +34,7 @@ from forge_os.cli.commands.acp import acp_app
 from forge_os.cli.commands.backtrack import backtrack_app
 from forge_os.cli.commands.channel import channel_app
 from forge_os.cli.commands.daemon import daemon_app
+from forge_os.cli.commands.doctor import doctor_app
 from forge_os.cli.commands.dreamer import dreamer_app
 from forge_os.cli.commands.health import health_app
 from forge_os.cli.commands.lazy_context import lazy_budget, lazy_stats
@@ -93,6 +94,7 @@ app.add_typer(health_app, name="health")
 app.add_typer(acp_app, name="acp")
 app.add_typer(dreamer_app, name="dreamer")
 app.add_typer(daemon_app, name="daemon")
+app.add_typer(doctor_app, name="doctor")
 # Phase 11 extension management + channels
 app.add_typer(plug_app, name="plug")
 app.add_typer(channel_app, name="channel")
