@@ -26,9 +26,9 @@
 ## Active — `forge doctor --fix` (FR-HD-007, owner greenlit 2026-06-25)
 
 Owner-authored scope: `plan/SCOPE-observability-cost-backlog.md` §#3. One PR per slice:
-- [x] **PR-1 — SRS-only (FR-HD-007)** → PR #42 (open). SRS 4.2→4.3 + §3.8 row; 8 acceptance clauses for 1:1 test mapping.
-- [ ] **PR-2 — remediation models + `use_cases/doctor.fix()`** (dry-run / confirm / CI-guard / audit). Stacked on PR-1.
-- [ ] **PR-3 — CLI flags + exit-code/guard matrix.**
+- [x] **PR-1 — SRS-only (FR-HD-007)** → PR #42 (merged). SRS 4.2→4.3 + §3.8 row; 8 acceptance clauses for 1:1 test mapping.
+- [x] **PR-2 — remediation models + `use_cases/doctor.fix()`** (dry-run / confirm / CI-guard / audit) → PR #43 (merged). 7/11 review findings fixed.
+- [ ] **PR-3 — CLI flags + exit-code/guard matrix.** (this slice)
 
 ### PR-2 gate
 1. **SRS:** FR-HD-007 (added in PR #42).
@@ -45,7 +45,22 @@ Owner-authored scope: `plan/SCOPE-observability-cost-backlog.md` §#3. One PR pe
    read-only `forge doctor` path is untouched. Risk: venv/deps fixes shell out (subprocess; pip hits
    the network) → isolated behind the injectable `RemediationRunner` so tests never mutate the host
    or hit the network; a freshly-created venv can't be entered by the running process, so the venv
-   recheck honestly stays WARN (created-but-not-activated), reported as such.
+   re-check verifies the `pyvenv.cfg` artifact instead of the inert process-scoped `check_virtualenv`
+   (review fix).
+
+### PR-3 gate
+1. **SRS:** FR-HD-007 — clause 1 ("bare `forge doctor` never mutates") + clause 8 exit code.
+2. **Files:** `cli/commands/doctor.py` (+`--fix/--yes/--force/--dry-run`, `_run_fix`, `_render_fix`,
+   `_fix_exit_code`, `_fix_payload`); `tests/test_cli_doctor.py` (+fix matrix). No `main.py` change
+   (doctor sub-app already registered); core untouched.
+3. **Verify:** `--yes/--force/--dry-run` without `--fix` → exit 2; `--fix --dry-run` plans + mutates
+   nothing; `--fix` under no-TTY without `--yes` → refused, exit 1; `--fix --yes` applies (exit 0); a
+   failed repair → exit 1; `--fix --dry-run --json` shape. CLI apply tests inject a local fake runner
+   (no subprocess/network). Manual smoke of `forge doctor --fix [--dry-run|--yes --force]`. Host +
+   clean `python:3.12-slim` Docker.
+4. **What breaks:** nothing — the bare read-only `forge doctor` path is unchanged (the new flags
+   default off); only `--fix` mutates. `interactive` is `sys.stdin.isatty()`; under CliRunner stdin is
+   not a TTY, so apply tests pass `--yes`.
 
 ---
 
