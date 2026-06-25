@@ -283,3 +283,43 @@ def test_bare_doctor_does_not_mutate_repairable_dir(tmp_path: Path) -> None:
     result = runner.invoke(doctor_app, ["--path", str(target)])
     assert result.exit_code == 0
     assert not (target / ".forge").exists()
+
+
+def _force_tty(monkeypatch: pytest.MonkeyPatch) -> None:
+    # CliRunner always presents a non-TTY stdin; force the interactive path so
+    # the per-action confirm prompt is reached (answers come from `input=`).
+    monkeypatch.setattr("forge_os.cli.commands.doctor._stdin_is_tty", lambda: True)
+
+
+def test_fix_interactive_decline_skips_action(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _force_tty(monkeypatch)
+    # A no-project report ⇒ plan is a single INIT action; declining it skips it.
+    report = DoctorReport(
+        checks=[DoctorCheck(name="Forge project", status=DoctorStatus.INFO, detail="no project")]
+    )
+    _patch_report(monkeypatch, report)
+    result = runner.invoke(doctor_app, ["--path", str(tmp_path), "--fix"], input="n\n")
+    assert result.exit_code == 0
+    assert "Apply:" in result.output  # the confirm prompt was shown
+    assert not (tmp_path / ".forge").exists()  # declined ⇒ no mutation
+
+
+def test_fix_interactive_decline_leaves_failing_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _force_tty(monkeypatch)
+    # An invalid-config FAIL ⇒ plan is REBUILD_CONFIG; declining it leaves the
+    # FAIL in place ⇒ the "still not ready" summary and a non-zero exit (clause 8).
+    report = DoctorReport(
+        checks=[
+            DoctorCheck(
+                name="Config validity", status=DoctorStatus.FAIL, detail="bad", remedy="fix it"
+            )
+        ]
+    )
+    _patch_report(monkeypatch, report)
+    result = runner.invoke(doctor_app, ["--path", str(tmp_path), "--fix"], input="n\n")
+    assert result.exit_code == 1
+    assert "still not ready" in result.output

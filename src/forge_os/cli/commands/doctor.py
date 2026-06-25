@@ -133,6 +133,15 @@ _FIX_ICONS = {
 }
 
 
+def _stdin_is_tty() -> bool:
+    """Whether stdin is an interactive terminal (the per-action confirm gate).
+
+    A named seam (not an inline ``sys.stdin.isatty()``) so tests can force the
+    interactive path — Typer's ``CliRunner`` always presents a non-TTY stdin.
+    """
+    return sys.stdin.isatty()
+
+
 def _run_fix(
     path: Path | None,
     *,
@@ -150,7 +159,7 @@ def _run_fix(
         dry_run=dry_run,
         assume_yes=assume_yes,
         force=force,
-        interactive=sys.stdin.isatty(),
+        interactive=_stdin_is_tty(),
         confirm=_confirm,
     )
 

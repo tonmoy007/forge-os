@@ -28,7 +28,10 @@
 Owner-authored scope: `plan/SCOPE-observability-cost-backlog.md` §#3. One PR per slice:
 - [x] **PR-1 — SRS-only (FR-HD-007)** → PR #42 (merged). SRS 4.2→4.3 + §3.8 row; 8 acceptance clauses for 1:1 test mapping.
 - [x] **PR-2 — remediation models + `use_cases/doctor.fix()`** (dry-run / confirm / CI-guard / audit) → PR #43 (merged). 7/11 review findings fixed.
-- [ ] **PR-3 — CLI flags + exit-code/guard matrix.** (this slice)
+- [x] **PR-3 — CLI flags + exit-code/guard matrix** → PR #44 (merged). 6/7 review findings fixed (incl. a clause-8 false-pass on a non-remediable FAIL).
+- [x] **Follow-up — TTY test seam** (test-only): `_stdin_is_tty()` indirection + interactive confirm-decline tests, closing the last render/exit branch (`SKIPPED` + remaining FAIL → "still not ready"). No behavior change.
+
+**FR-HD-007 complete (2026-06-25).** `forge doctor --fix` shipped across PRs #42–#44; all 8 acceptance clauses realized; core untouched; 13 confirmed review findings (3 real defects + 10 test gaps) fixed across the slices.
 
 ### PR-2 gate
 1. **SRS:** FR-HD-007 (added in PR #42).
