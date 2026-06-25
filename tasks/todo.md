@@ -20,9 +20,32 @@
 
 | Item | SRS | Why gated |
 |------|-----|-----------|
-| `forge doctor --fix` (guarded auto-remediation) | **NEW FR-HD-007** (needs SRS bump) | depends on `forge doctor` (now shipped); owner accepted the scope ("will do for now") but has not greenlit the build |
 | Always-on daemon monitor (budget/latency/cost-cap) | FR-HD-003/005, FR-COST-004 | needs a hook-timing prereq; FR-COST-004 "% of production budget" is unimplementable as written (no such field) |
 | OTLP dual-stream tracing | FR-OBS-001, FR-SEM-002 | Production-tier, optional dep, MVP subset only — a local CLI can't deliver dashboard/network spans |
+
+## Active — `forge doctor --fix` (FR-HD-007, owner greenlit 2026-06-25)
+
+Owner-authored scope: `plan/SCOPE-observability-cost-backlog.md` §#3. One PR per slice:
+- [x] **PR-1 — SRS-only (FR-HD-007)** → PR #42 (open). SRS 4.2→4.3 + §3.8 row; 8 acceptance clauses for 1:1 test mapping.
+- [ ] **PR-2 — remediation models + `use_cases/doctor.fix()`** (dry-run / confirm / CI-guard / audit). Stacked on PR-1.
+- [ ] **PR-3 — CLI flags + exit-code/guard matrix.**
+
+### PR-2 gate
+1. **SRS:** FR-HD-007 (added in PR #42).
+2. **Files:** `schemas/doctor.py` (+remediation models, pure); NEW `health/remediation.py`
+   (planner + injectable `RemediationRunner`/`RemediationExecutor` seam); `use_cases/doctor.py`
+   (+`DoctorFixUseCases.fix()`); NEW `tests/test_health_remediation.py` +
+   `tests/test_use_cases_doctor_fix.py`. No CLI/`main.py` change (that is PR-3).
+3. **Verify:** dry-run plans-but-mutates-nothing; confirm-yes applies / confirm-no skips per action;
+   no-TTY/CI refuses without `--yes`; config rewrite only when config already invalid (+`.bak`
+   backup + audit `doctor_autofix_config_rewrite`/`ALLOWED`); `--force` required to re-init over an
+   existing `.forge/`; each fix re-runs its FR-HD-006 check and records the new status. Host + clean
+   `python:3.12-slim` Docker.
+4. **What breaks:** nothing existing — additive models + new domain module + new use-case class; the
+   read-only `forge doctor` path is untouched. Risk: venv/deps fixes shell out (subprocess; pip hits
+   the network) → isolated behind the injectable `RemediationRunner` so tests never mutate the host
+   or hit the network; a freshly-created venv can't be entered by the running process, so the venv
+   recheck honestly stays WARN (created-but-not-activated), reported as such.
 
 ---
 
