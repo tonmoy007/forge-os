@@ -138,7 +138,13 @@ class DoctorFixUseCases:
         plan = build_remediation_plan(report, target=target)
         fix_report = FixReport(dry_run=dry_run, planned=plan)
 
-        if dry_run or not plan:
+        if dry_run:
+            return fix_report
+        if not plan:
+            # Nothing is auto-fixable — the current report IS the outcome, so the
+            # caller's exit code still reflects any remaining (non-remediable) FAIL
+            # (e.g. an unsupported Python version) rather than reporting success.
+            fix_report.final_report = report
             return fix_report
 
         # CI / no-TTY guard: refuse to mutate without an explicit `--yes`.
