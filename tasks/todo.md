@@ -22,10 +22,11 @@
 |------|-----|-----------|
 | OTLP dual-stream tracing | FR-OBS-001, FR-SEM-002 | Production-tier, optional dep, MVP subset only — a local CLI can't deliver dashboard/network spans |
 
-## Active — `forge adapter enable/disable` (FR-KA-003, owner greenlit 2026-06-30)
+## Done — `forge adapter enable/disable` (FR-KA-003, completed 2026-06-30)
 
-Make FR-KA-003's acceptance ("user switches kernels by config change; no core code change") a
-first-class command instead of hand-editing `.forge/config.yaml`. One owner-merge PR.
+Made FR-KA-003's acceptance ("user switches kernels by config change; no core code change") a
+first-class command instead of hand-editing `.forge/config.yaml`. → PR #47 (merged). 3 confirmed
+review findings fixed (vacuous list test, uncaught `OSError`→`ConfigError`, kebab normalization).
 
 ### Gate
 1. **SRS:** FR-KA-003 (existing — acceptance: "User switches kernels by config change; no core code
@@ -54,8 +55,8 @@ Owner-authored scope: `plan/SCOPE-observability-cost-backlog.md` §#4. Default-o
 pattern) that checks token budget, hook latency, and a cost cap — surfacing `DaemonAlert`s and
 self-throttling. One PR per slice (6); start with the blocking prereq:
 - [x] **S1 — hook-timing instrumentation (prereq)** — FR-HD-005 hook timing isn't recorded today. → PR #46 (merged).
-- [ ] S2 — `HookLatencyHealthChecker` (this slice)
-- [ ] S3 — per-session token checker (reads the existing `.forge/context-selections.jsonl`)
+- [x] S2 — `HookLatencyHealthChecker` → PR #48 (merged).
+- [ ] S3 — per-session token checker (reads the existing `.forge/context-selections.jsonl`) (this slice)
 - [ ] S4 — `CostAggregator` + `HealthMonitorConfig` (alert-only; absolute config cap, not the
       unimplementable "% of monthly budget")
 - [ ] S5 — self-throttle flag honored by dreamer/observer/health tasks
@@ -91,6 +92,26 @@ self-throttling. One PR per slice (6); start with the blocking prereq:
 4. **What breaks:** nothing — additive read-only checker; if it raises, `run_full_check` already
    isolates each checker (reports "crashed", others still run). Default off-path: a project with hooks
    disabled has an empty jsonl ⇒ healthy.
+
+### S3 gate
+1. **SRS:** FR-HD-003 (existing — "Measures injected-context token count per session and warns if it
+   exceeds budget; overages logged") + FR-TE-003 (warn 80% / error 100%). No new FR. Scope §#4 (b):
+   "session" = one recorded selection; read the existing `.forge/context-selections.jsonl` the pruner
+   already writes (no new Event Store write, no session id invented). Scope §#5 (c) mandates this as a
+   real `health/token_budget.py` `HealthChecker`.
+2. **Files:** NEW `health/token_budget.py` (`TokenBudgetHealthChecker(HealthChecker)` — tolerant read
+   of the selection log, grades each via the existing `context/token_monitor.evaluate_session_budget`,
+   warn ratio from `features.token_monitor.warn_ratio` via `resolve_warn_ratio`); register
+   `"token_budget"` in `use_cases/health.py::run_full_check`; NEW `tests/test_health_token_budget.py`;
+   `tests/test_health_phase09.py` count 6→7. **Core untouched** — reuses the §#5 evaluator; no new
+   schema, no `core/` edits.
+3. **Verify:** no selections → healthy; warn-tier (≥ ratio) and error-tier (≥100%) → flagged
+   (healthy=False) with stage + ratio + level in details + a recommendation; ok selections not flagged;
+   breaches sorted worst-first; malformed/partial lines skipped; warn ratio resolved from config (lower
+   it → an ok selection breaches); surfaces in `forge health check`. Host + clean `python:3.12-slim`
+   Docker.
+4. **What breaks:** nothing — additive read-only checker reusing the merged evaluator; `run_full_check`
+   isolates a crash. Empty/missing selection log ⇒ healthy (fresh project, or context selection unused).
 
 ## Done — `forge doctor --fix` (FR-HD-007, completed 2026-06-25)
 
