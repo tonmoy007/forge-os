@@ -22,6 +22,32 @@
 |------|-----|-----------|
 | OTLP dual-stream tracing | FR-OBS-001, FR-SEM-002 | Production-tier, optional dep, MVP subset only — a local CLI can't deliver dashboard/network spans |
 
+## Active — `forge adapter enable/disable` (FR-KA-003, owner greenlit 2026-06-30)
+
+Make FR-KA-003's acceptance ("user switches kernels by config change; no core code change") a
+first-class command instead of hand-editing `.forge/config.yaml`. One owner-merge PR.
+
+### Gate
+1. **SRS:** FR-KA-003 (existing — acceptance: "User switches kernels by config change; no core code
+   change required"). No new FR; this is the ergonomic surface over the existing `default_adapter` /
+   `adapters.<id>.enabled` config fields.
+2. **Files:** NEW `config/writer.py` (canonical atomic `save_config(path, config)`: tempfile +
+   `os.replace`, `yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False)` — same shape as the
+   doctor `--fix` rewrite, now shared); `use_cases/adapters.py` (+`set_enabled(id, *, enabled,
+   make_default)` returning an `AdapterMutation`); `cli/main.py` (+`adapter enable <id> [--default]` /
+   `adapter disable <id>` on the existing `adapter_app`); tests NEW `tests/test_config_writer.py`,
+   NEW `tests/test_cli_adapter.py`, extend `tests/test_use_cases_adapters.py`. **Core untouched** —
+   `schemas/config.py` is read/dumped only; no `core/` or canonical-schema edits.
+3. **Verify:** enable flips `enabled` + re-validates + persists; `--default` also sets
+   `default_adapter`; disable flips back; **guard** — refuse to disable the current default; unknown
+   id → error/exit 1; idempotent re-enable; enabling an unavailable adapter succeeds but warns with the
+   probe reason; `forge config validate` still green after a write. Host + clean `python:3.12-slim`
+   Docker.
+4. **What breaks:** nothing existing — additive command + new writer module; read-only `adapter
+   list/status` unchanged. Risk: a config rewrite drops YAML comments (round-trips through the schema,
+   same as doctor `--fix`); the scaffolded config has none. Atomic write (tempfile + `os.replace`) so a
+   crash mid-write can't truncate `config.yaml`.
+
 ## Active — Always-on daemon monitor (FR-HD-003/005, FR-COST-004, owner greenlit 2026-06-25)
 
 Owner-authored scope: `plan/SCOPE-observability-cost-backlog.md` §#4. Default-off daemon task (Observer
