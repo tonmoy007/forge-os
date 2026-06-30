@@ -8,6 +8,7 @@ from typing import cast
 from forge_os.events.log import append_event
 from forge_os.events.model import EventType, LifecycleEvent, new_event
 from forge_os.hooks.registry import HookRegistry, HookResult
+from forge_os.hooks.timing import HookTiming, HookTimingLog
 from forge_os.schemas.state import PipelineState
 
 
@@ -22,7 +23,32 @@ class EventBus:
         """Append an event and dispatch hooks in deterministic order."""
 
         append_event(self.event_log_path, event)
-        return self.hook_registry.run(event)
+        results = self.hook_registry.run(event)
+        self._record_timings(event.event_type, results)
+        return results
+
+    def _record_timings(self, event_type: str, results: list[HookResult]) -> None:
+        """Persist hook latencies for FR-HD-005, best-effort.
+
+        Only writes when hooks actually ran, and never raises into ``emit`` — hook
+        timing is observability, not part of the event/state write path.
+        """
+
+        if not results:
+            return
+        try:
+            timings = [
+                HookTiming(
+                    event_type=event_type,
+                    hook_name=result.hook_name,
+                    status=result.status,
+                    duration_ms=result.duration_ms,
+                )
+                for result in results
+            ]
+            HookTimingLog(self.event_log_path.parent).append(timings)
+        except Exception:  # noqa: BLE001 - recording must never break a state mutation
+            pass
 
     def emit_transition(
         self,

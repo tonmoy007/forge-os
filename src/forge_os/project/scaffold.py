@@ -175,6 +175,7 @@ def initialize_project(
     _write_text(root / ".forge" / "session-log.jsonl", "", overwrite=overwrite)
     _write_text(root / ".forge" / "agent-runs.jsonl", "", overwrite=overwrite)
     _write_text(root / ".forge" / "context-selections.jsonl", "", overwrite=overwrite)
+    _write_text(root / ".forge" / "hook-timings.jsonl", "", overwrite=overwrite)
     _write_text(root / ".forge" / "security-audit.jsonl", "", overwrite=overwrite)
     _write_text(
         root / ".forge" / "lessons.yaml",

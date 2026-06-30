@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from forge_os.events.model import LifecycleEvent
+if TYPE_CHECKING:
+    # Type-only: importing events.model at runtime would create a cycle
+    # (events.bus imports this module), and it is only used in annotations.
+    from forge_os.events.model import LifecycleEvent
 
-Hook = Callable[[LifecycleEvent], None]
+Hook = Callable[["LifecycleEvent"], None]
 
 
 @dataclass(frozen=True)
@@ -18,6 +23,9 @@ class HookResult:
     hook_name: str
     status: str
     error: str | None = None
+    # Wall-clock execution time, for hook-latency oversight (FR-HD-005). Includes
+    # the timeout/failure paths so persistently-slow hooks are still measured.
+    duration_ms: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -83,15 +91,30 @@ class HookRegistry:
 
     def _run_one(self, hook: RegisteredHook, event: LifecycleEvent) -> HookResult:
         executor = ThreadPoolExecutor(max_workers=1)
+        started = time.perf_counter()
         future = executor.submit(hook.handler, event)
         try:
             _ = future.result(timeout=hook.timeout_seconds)
         except TimeoutError:
             future.cancel()
             executor.shutdown(wait=False, cancel_futures=True)
-            return HookResult(hook_name=hook.name, status="timed_out", error="timeout")
+            return HookResult(
+                hook_name=hook.name,
+                status="timed_out",
+                error="timeout",
+                duration_ms=(time.perf_counter() - started) * 1000.0,
+            )
         except Exception as exc:  # noqa: BLE001 - hook failures must be isolated
             executor.shutdown(wait=False, cancel_futures=True)
-            return HookResult(hook_name=hook.name, status="failed", error=str(exc))
+            return HookResult(
+                hook_name=hook.name,
+                status="failed",
+                error=str(exc),
+                duration_ms=(time.perf_counter() - started) * 1000.0,
+            )
         executor.shutdown(wait=True)
-        return HookResult(hook_name=hook.name, status="succeeded")
+        return HookResult(
+            hook_name=hook.name,
+            status="succeeded",
+            duration_ms=(time.perf_counter() - started) * 1000.0,
+        )
