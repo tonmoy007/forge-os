@@ -25,7 +25,11 @@ from forge_os.adapters.claude_code.runner import (
     get_claude_version,
     validate_permission_mode,
 )
-from forge_os.adapters.registry import ADAPTER_CLASS_NAMES, ADAPTER_PRIORITY
+from forge_os.adapters.registry import (
+    ADAPTER_CLASS_NAMES,
+    ADAPTER_PRIORITY,
+    AdapterRegistryError,
+)
 from forge_os.agents.executor import AgentExecutionError, run_stage_agent
 from forge_os.agents.loader import AgentLoadError, load_contracts, load_personas
 
@@ -680,6 +684,60 @@ def adapter_status(
             detail,
         )
     console.print(table)
+
+
+@adapter_app.command("enable")
+def adapter_enable(
+    adapter_id: Annotated[
+        str, typer.Argument(help="Adapter id to enable (see `forge adapter list`).")
+    ],
+    make_default: Annotated[
+        bool,
+        typer.Option("--default", "-d", help="Also make this adapter the default kernel."),
+    ] = False,
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
+) -> None:
+    """Enable a kernel adapter in this project's config (FR-KA-003)."""
+
+    _apply_adapter_enabled(adapter_id, enabled=True, make_default=make_default, path=path)
+
+
+@adapter_app.command("disable")
+def adapter_disable(
+    adapter_id: Annotated[str, typer.Argument(help="Adapter id to disable.")],
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", "-p", help="Directory inside a Forge project."),
+    ] = None,
+) -> None:
+    """Disable a kernel adapter in this project's config."""
+
+    _apply_adapter_enabled(adapter_id, enabled=False, make_default=False, path=path)
+
+
+def _apply_adapter_enabled(
+    adapter_id: str, *, enabled: bool, make_default: bool, path: Path | None
+) -> None:
+    # CLI accepts kebab-case (matching `forge init --adapter`); config/registry use snake_case.
+    adapter_id = adapter_id.replace("-", "_")
+    try:
+        root = _resolve_project_root(path)
+        result = AdapterUseCases(root).set_enabled(
+            adapter_id, enabled=enabled, make_default=make_default
+        )
+    except (ProjectNotFoundError, ConfigError, AdapterRegistryError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    verb = "enabled" if result.enabled else "disabled"
+    state = "now" if result.changed else "already"
+    default_note = " [cyan](default kernel)[/cyan]" if result.is_default else ""
+    console.print(f"[green]Adapter `{result.adapter_id}` {state} {verb}.[/green]{default_note}")
+    if result.enabled and not result.available:
+        console.print(f"[yellow]⚠ Not available yet:[/yellow] {result.reason}")
 
 
 # ─── Agent Commands ───────────────────────────────────────────────────────────
