@@ -20,10 +20,38 @@
 
 | Item | SRS | Why gated |
 |------|-----|-----------|
-| Always-on daemon monitor (budget/latency/cost-cap) | FR-HD-003/005, FR-COST-004 | needs a hook-timing prereq; FR-COST-004 "% of production budget" is unimplementable as written (no such field) |
 | OTLP dual-stream tracing | FR-OBS-001, FR-SEM-002 | Production-tier, optional dep, MVP subset only — a local CLI can't deliver dashboard/network spans |
 
-## Active — `forge doctor --fix` (FR-HD-007, owner greenlit 2026-06-25)
+## Active — Always-on daemon monitor (FR-HD-003/005, FR-COST-004, owner greenlit 2026-06-25)
+
+Owner-authored scope: `plan/SCOPE-observability-cost-backlog.md` §#4. Default-off daemon task (Observer
+pattern) that checks token budget, hook latency, and a cost cap — surfacing `DaemonAlert`s and
+self-throttling. One PR per slice (6); start with the blocking prereq:
+- [ ] **S1 — hook-timing instrumentation (prereq)** — FR-HD-005 hook timing isn't recorded today. (this slice)
+- [ ] S2 — `HookLatencyHealthChecker`
+- [ ] S3 — per-session token checker (reads the existing `.forge/context-selections.jsonl`)
+- [ ] S4 — `CostAggregator` + `HealthMonitorConfig` (alert-only; absolute config cap, not the
+      unimplementable "% of monthly budget")
+- [ ] S5 — self-throttle flag honored by dreamer/observer/health tasks
+- [ ] S6 — gate `_health_monitor_tasks` behind `features.health_monitor` (default off)
+
+### S1 gate
+1. **SRS:** FR-HD-005 (existing — "Monitors hook execution time; persistently slow hooks flagged").
+   No new FR; S1 is the recording prereq the checker (S2) reads.
+2. **Files:** `hooks/registry.py` (+`HookResult.duration_ms`, measured in `_run_one`); NEW
+   `hooks/timing.py` (`HookTiming` + `HookTimingLog` append/read `.forge/hook-timings.jsonl`);
+   `events/bus.py` (best-effort record after `run()`); `project/scaffold.py` (pre-create the jsonl);
+   tests NEW `tests/test_hooks_timing.py` + extend `tests/test_events_hooks_phase03.py`.
+   **Core untouched** — recording wires through `EventBus` (events/, not core/), so
+   `core/state_manager.py` is not modified.
+3. **Verify:** a hook's measured `duration_ms` ≥ 0 across success/timeout/failure; `HookTimingLog`
+   round-trips + tolerates malformed lines; `emit` records only when hooks ran, best-effort (a
+   recording failure never breaks `emit`). Host + clean `python:3.12-slim` Docker.
+4. **What breaks:** nothing — additive field + new module + a best-effort append in `EventBus`; events
+   with no registered hooks write nothing. Risk: per-emit I/O → gated on non-empty results + swallowed
+   on error so it can never fail a state mutation.
+
+## Done — `forge doctor --fix` (FR-HD-007, completed 2026-06-25)
 
 Owner-authored scope: `plan/SCOPE-observability-cost-backlog.md` §#3. One PR per slice:
 - [x] **PR-1 — SRS-only (FR-HD-007)** → PR #42 (merged). SRS 4.2→4.3 + §3.8 row; 8 acceptance clauses for 1:1 test mapping.

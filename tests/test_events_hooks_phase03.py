@@ -91,6 +91,88 @@ def test_hook_timeout_is_reported(tmp_path: Path) -> None:
     results = bus.emit(new_event("StageStarted", stage_id="srs"))
 
     assert results[0].status == "timed_out"
+    # The timeout branch must still record a real wall-clock measurement, not the
+    # 0.0 default — perf_counter diffs are strictly positive, so > 0.0 discriminates
+    # "measured" from "unmeasured" and guards the duration_ms= kwarg on that branch.
+    assert results[0].duration_ms > 0.0
+
+
+def test_hook_duration_is_measured(tmp_path: Path) -> None:
+    registry = HookRegistry()
+    registry.register("StageStarted", lambda event: time.sleep(0.01), name="slow", order=10)
+    bus = EventBus(tmp_path / "events.jsonl", registry)
+
+    results = bus.emit(new_event("StageStarted", stage_id="srs"))
+
+    assert results[0].duration_ms >= 5.0  # ~10 ms slept, generous CI margin
+
+
+def test_failed_hook_still_measures_duration(tmp_path: Path) -> None:
+    registry = HookRegistry()
+
+    def fail_hook(event: object) -> None:
+        time.sleep(0.01)  # ~10 ms of work before raising
+        raise RuntimeError("boom")
+
+    registry.register("StageStarted", fail_hook, name="bad")
+    bus = EventBus(tmp_path / "events.jsonl", registry)
+
+    results = bus.emit(new_event("StageStarted", stage_id="srs"))
+
+    assert results[0].status == "failed"
+    # >= 5.0 (not the vacuous >= 0.0) proves the failure branch measures real
+    # wall-clock via perf_counter rather than falling back to the 0.0 default.
+    assert results[0].duration_ms >= 5.0
+
+
+def test_emit_records_hook_timings(tmp_path: Path) -> None:
+    from forge_os.hooks.timing import HookTimingLog
+
+    forge_dir = tmp_path / ".forge"
+    forge_dir.mkdir()
+    registry = HookRegistry()
+    registry.register("StageStarted", lambda event: time.sleep(0.01), name="slow", order=10)
+    bus = EventBus(forge_dir / "events.jsonl", registry)
+
+    bus.emit(new_event("StageStarted", stage_id="srs"))
+
+    records = HookTimingLog(forge_dir).read_all()
+    assert len(records) == 1
+    assert records[0].hook_name == "slow"
+    assert records[0].event_type == "StageStarted"
+    assert records[0].status == "succeeded"
+    # Ties registry measurement → HookResult → bus field-copy → persisted record →
+    # read_all in one path, so a mis-mapped duration_ms at bus.py cannot ship green.
+    assert records[0].duration_ms >= 5.0
+
+
+def test_emit_without_hooks_records_nothing(tmp_path: Path) -> None:
+    from forge_os.hooks.timing import HookTimingLog
+
+    forge_dir = tmp_path / ".forge"
+    forge_dir.mkdir()
+    bus = EventBus(forge_dir / "events.jsonl")  # no hooks registered
+
+    bus.emit(new_event("StageStarted", stage_id="srs"))
+
+    assert HookTimingLog(forge_dir).read_all() == []  # no hooks ran ⇒ no timing record
+
+
+def test_timing_recording_failure_does_not_break_emit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = HookRegistry()
+    registry.register("StageStarted", lambda event: None, name="noop")
+    bus = EventBus(tmp_path / "events.jsonl", registry)
+
+    def boom(self: object, timings: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr("forge_os.events.bus.HookTimingLog.append", boom)
+
+    results = bus.emit(new_event("StageStarted", stage_id="srs"))  # must not raise
+
+    assert results[0].status == "succeeded"
 
 
 def test_state_manager_stage_commands_emit_normalized_events(tmp_path: Path) -> None:
