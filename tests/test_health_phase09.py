@@ -142,9 +142,10 @@ class TestHealthUseCases:
 
         # Individual checkers shouldn't crash the whole report
         # Some will be healthy, some not, but all should have results
-        assert len(report) == 7
+        assert len(report) == 8
         assert "hook_latency" in report  # FR-HD-005 checker (daemon-monitor S2)
         assert "token_budget" in report  # FR-HD-003 checker (daemon-monitor S3)
+        assert "cost_cap" in report  # FR-COST-004 checker (daemon-monitor S4)
         for subsystem in report:
             assert "healthy" in report[subsystem]
 

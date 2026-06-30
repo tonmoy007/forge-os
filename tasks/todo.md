@@ -56,7 +56,7 @@ pattern) that checks token budget, hook latency, and a cost cap — surfacing `D
 self-throttling. One PR per slice (6); start with the blocking prereq:
 - [x] **S1 — hook-timing instrumentation (prereq)** — FR-HD-005 hook timing isn't recorded today. → PR #46 (merged).
 - [x] S2 — `HookLatencyHealthChecker` → PR #48 (merged).
-- [ ] S3 — per-session token checker (reads the existing `.forge/context-selections.jsonl`) (this slice)
+- [x] S3 — per-session token checker (reads the existing `.forge/context-selections.jsonl`) → PR #49 (merged).
 - [ ] S4 — `CostAggregator` + `HealthMonitorConfig` (alert-only; absolute config cap, not the
       unimplementable "% of monthly budget")
 - [ ] S5 — self-throttle flag honored by dreamer/observer/health tasks
@@ -112,6 +112,30 @@ self-throttling. One PR per slice (6); start with the blocking prereq:
    Docker.
 4. **What breaks:** nothing — additive read-only checker reusing the merged evaluator; `run_full_check`
    isolates a crash. Empty/missing selection log ⇒ healthy (fresh project, or context selection unused).
+
+### S4 gate
+1. **SRS:** FR-COST-004 ("Always-On Cost Cap — … MUST NOT exceed a configurable always-on monthly
+   budget per project (default: 5% of the project's average monthly production budget); daemon
+   self-throttles when approaching cap"). **Deviations (scope §#4(c)), both documented in
+   `health/cost_cap.py`:** (a) no production-budget field exists, so the "5% of monthly" formula is
+   unimplementable → the cap is an absolute configured value `features.health_monitor.cost_cap_usd`;
+   (b) the FR scopes the cap to the daemon components "collectively", but spawn events carry no
+   daemon-vs-production origin marker and those components don't record cost-bearing spawns today → the
+   cap meters TOTAL recorded spend ("Recorded spend"), with daemon-scoped attribution deferred until an
+   origin marker exists. Alert-only this slice (self-throttle is S5). No new FR.
+2. **Files:** NEW `cost/aggregator.py` (`CostAggregator` — domain sum of recorded
+   `AdapterSpawnCompleted` `total_cost_usd` from the Event Store, so a `health/` checker can reuse it
+   without importing `use_cases/cost.py`); NEW `health/monitor_config.py` (`HealthMonitorConfig` +
+   tolerant `load_health_monitor_config(features)`, mirroring `resolve_warn_ratio`); NEW
+   `health/cost_cap.py` (`CostCapHealthChecker` — approaching ≥80% / over ≥100% of cap); register
+   `"cost_cap"` in `use_cases/health.py::run_full_check`; NEW tests for each + `test_health_phase09`
+   count 7→8. **Core untouched** — new domain modules + one dict entry; reuses the merged Event Store.
+3. **Verify:** aggregator sums priced spawns / skips unpriced+bool / zero when no events.db; config
+   loader defaults off+uncapped and rejects malformed/non-positive caps; checker — no cap ⇒ healthy,
+   within ⇒ healthy, ≥80% ⇒ approaching (flagged), ≥100% ⇒ over (flagged), cap resolved from config,
+   surfaces in `forge health check`. Host + clean `python:3.12-slim` Docker.
+4. **What breaks:** nothing — additive read-only modules; `run_full_check` isolates a crash. Default
+   off-path: no `cost_cap_usd` configured ⇒ healthy/inert, so existing projects are unaffected.
 
 ## Done — `forge doctor --fix` (FR-HD-007, completed 2026-06-25)
 
