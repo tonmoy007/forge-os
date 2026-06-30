@@ -8,6 +8,7 @@ from typing import Any
 from forge_os.health.acp import ACPHealthChecker
 from forge_os.health.adg import ADGHealthChecker
 from forge_os.health.gates import GateHealthChecker
+from forge_os.health.hook_latency import HookLatencyHealthChecker
 from forge_os.health.memory import MemoryHealthChecker
 from forge_os.health.state import StateHealthChecker
 
@@ -26,6 +27,7 @@ class HealthUseCases:
             "adg": ADGHealthChecker(self.project_root),
             "memory": MemoryHealthChecker(self.project_root),
             "acp": ACPHealthChecker(self.project_root),
+            "hook_latency": HookLatencyHealthChecker(self.project_root),
         }
 
         report: dict[str, dict[str, Any]] = {}
