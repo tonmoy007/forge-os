@@ -53,8 +53,8 @@ first-class command instead of hand-editing `.forge/config.yaml`. One owner-merg
 Owner-authored scope: `plan/SCOPE-observability-cost-backlog.md` §#4. Default-off daemon task (Observer
 pattern) that checks token budget, hook latency, and a cost cap — surfacing `DaemonAlert`s and
 self-throttling. One PR per slice (6); start with the blocking prereq:
-- [ ] **S1 — hook-timing instrumentation (prereq)** — FR-HD-005 hook timing isn't recorded today. (this slice)
-- [ ] S2 — `HookLatencyHealthChecker`
+- [x] **S1 — hook-timing instrumentation (prereq)** — FR-HD-005 hook timing isn't recorded today. → PR #46 (merged).
+- [ ] S2 — `HookLatencyHealthChecker` (this slice)
 - [ ] S3 — per-session token checker (reads the existing `.forge/context-selections.jsonl`)
 - [ ] S4 — `CostAggregator` + `HealthMonitorConfig` (alert-only; absolute config cap, not the
       unimplementable "% of monthly budget")
@@ -76,6 +76,21 @@ self-throttling. One PR per slice (6); start with the blocking prereq:
 4. **What breaks:** nothing — additive field + new module + a best-effort append in `EventBus`; events
    with no registered hooks write nothing. Risk: per-emit I/O → gated on non-empty results + swallowed
    on error so it can never fail a state mutation.
+
+### S2 gate
+1. **SRS:** FR-HD-005 (existing — "Monitors hook execution time; persistently slow hooks flagged").
+   Alert-only per v4.1 (no auto-disable). S2 reads the `.forge/hook-timings.jsonl` S1 records.
+2. **Files:** NEW `health/hook_latency.py` (`HookLatencyHealthChecker(HealthChecker)` — reads via
+   `HookTimingLog`, flags hooks whose mean duration ≥ threshold over ≥ min_samples runs); register
+   `"hook_latency"` in `use_cases/health.py::run_full_check` (surfaces under `forge health check`);
+   NEW `tests/test_health_hook_latency.py`. **Core untouched** — new checker module + one dict entry.
+3. **Verify:** empty/missing timings → healthy ("nothing recorded yet"); a hook with mean ≥ threshold
+   and ≥ min_samples → flagged (healthy=False) with names + mean/max in details + a recommendation; a
+   one-off slow sample below min_samples → not flagged; thresholds injectable for deterministic tests;
+   surfaces in the `forge health check` report. Host + clean `python:3.12-slim` Docker.
+4. **What breaks:** nothing — additive read-only checker; if it raises, `run_full_check` already
+   isolates each checker (reports "crashed", others still run). Default off-path: a project with hooks
+   disabled has an empty jsonl ⇒ healthy.
 
 ## Done — `forge doctor --fix` (FR-HD-007, completed 2026-06-25)
 
