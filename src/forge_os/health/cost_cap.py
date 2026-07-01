@@ -21,11 +21,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from forge_os.config.loader import ConfigError, load_config
 from forge_os.cost.aggregator import CostAggregator
 from forge_os.health.checker import HealthChecker, HealthResult
-from forge_os.health.monitor_config import load_health_monitor_config
-from forge_os.schemas.config import ConfigError as SchemaConfigError
+from forge_os.health.monitor_config import resolve_cost_cap_usd
 
 # Alert as "approaching" once spend reaches this fraction of the cap (the
 # self-throttle trigger the daemon will act on); "over" at/above the cap itself.
@@ -58,6 +56,21 @@ class CostCapHealthChecker(HealthChecker):
                 details=details,
             )
 
+        if not totals.readable:
+            # Capped but spend is unknown (unreadable events.db): reporting
+            # "within cap" would be a lie and would mask a defeated control.
+            return HealthResult(
+                healthy=False,
+                message=(
+                    "Cannot read recorded spend (events.db unreadable); "
+                    "cost cap cannot be enforced."
+                ),
+                details=details,
+                recommendations=[
+                    "Repair or remove the corrupt .forge/events.db so spend can be metered.",
+                ],
+            )
+
         ratio = spent / cap
         details["ratio"] = round(ratio, 3)
         if ratio >= 1.0:
@@ -84,10 +97,4 @@ class CostCapHealthChecker(HealthChecker):
         )
 
     def _resolve_cap(self) -> float | None:
-        # Mirror the S3 checker: load_config raises the loader's ConfigError or the
-        # schema's (a separate class it does not wrap); a broken config ⇒ uncapped.
-        try:
-            config = load_config(self.project_root / ".forge" / "config.yaml")
-        except (ConfigError, SchemaConfigError):
-            return None
-        return load_health_monitor_config(config.features).cost_cap_usd
+        return resolve_cost_cap_usd(self.project_root)

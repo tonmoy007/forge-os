@@ -2,7 +2,22 @@
 
 from __future__ import annotations
 
-from forge_os.health.monitor_config import HealthMonitorConfig, load_health_monitor_config
+from pathlib import Path
+
+from forge_os.health.monitor_config import (
+    HealthMonitorConfig,
+    load_health_monitor_config,
+    resolve_cost_cap_usd,
+)
+
+
+def _write_config(project_root: Path, features_block: str) -> None:
+    forge = project_root / ".forge"
+    forge.mkdir(parents=True, exist_ok=True)
+    (forge / "config.yaml").write_text(
+        "schema_version: '0.1'\nproject:\n  name: demo\n" + features_block,
+        encoding="utf-8",
+    )
 
 
 class TestLoadHealthMonitorConfig:
@@ -35,3 +50,24 @@ class TestLoadHealthMonitorConfig:
 
     def test_non_bool_enabled_falls_back_to_false(self) -> None:
         assert load_health_monitor_config({"health_monitor": {"enabled": "yes"}}).enabled is False
+
+
+class TestResolveCostCapUsd:
+    def test_resolves_cap_from_config(self, tmp_path: Path) -> None:
+        _write_config(tmp_path, "features:\n  health_monitor:\n    cost_cap_usd: 7.5\n")
+        assert resolve_cost_cap_usd(tmp_path) == 7.5
+
+    def test_missing_config_file_is_none(self, tmp_path: Path) -> None:
+        # No .forge/config.yaml at all ⇒ uncapped (load_config wraps the missing
+        # file as ConfigError, which resolve_cost_cap_usd swallows).
+        assert resolve_cost_cap_usd(tmp_path) is None
+
+    def test_no_health_monitor_section_is_none(self, tmp_path: Path) -> None:
+        _write_config(tmp_path, "features:\n  observer: false\n")
+        assert resolve_cost_cap_usd(tmp_path) is None
+
+    def test_broken_config_is_none(self, tmp_path: Path) -> None:
+        forge = tmp_path / ".forge"
+        forge.mkdir(parents=True, exist_ok=True)
+        (forge / "config.yaml").write_text("just a string, not a mapping\n", encoding="utf-8")
+        assert resolve_cost_cap_usd(tmp_path) is None

@@ -76,6 +76,24 @@ class TestCostCapHealthChecker:
         assert flagged.healthy is False
         assert flagged.details["cost_cap_usd"] == 10.0
 
+    def test_unreadable_store_is_unhealthy_when_capped(self, tmp_path: Path) -> None:
+        # A corrupt events.db under a cap means spend is unknown: the checker must
+        # report unhealthy, not a misleading "within cap", so a defeated control
+        # is visible rather than masked.
+        root = _project(tmp_path)
+        (root / ".forge" / "events.db").write_bytes(b"not a sqlite database\x00\xff")
+        result = CostCapHealthChecker(root, cost_cap_usd=10.0).check()
+        assert result.healthy is False
+        assert "unreadable" in result.message
+
+    def test_unreadable_store_ignored_when_uncapped(self, tmp_path: Path) -> None:
+        # No cap ⇒ nothing to enforce, so store readability is irrelevant.
+        root = _project(tmp_path)
+        (root / ".forge" / "events.db").write_bytes(b"not a sqlite database\x00\xff")
+        result = CostCapHealthChecker(root).check()
+        assert result.healthy is True
+        assert "No cost cap" in result.message
+
     def test_surfaces_in_full_health_report(self, tmp_path: Path) -> None:
         report = HealthUseCases(_project(tmp_path)).run_full_check()
         assert "cost_cap" in report

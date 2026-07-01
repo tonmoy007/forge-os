@@ -10,12 +10,16 @@ is the minimal "total $ so far" a cap needs.
 from __future__ import annotations
 
 import json
+import logging
 import math
+import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 
 from forge_os.events.store import EventStore
+
+log = logging.getLogger("forge.cost.aggregator")
 
 _COMPLETED = "AdapterSpawnCompleted"
 
@@ -27,6 +31,21 @@ class CostTotals:
     total_cost_usd: float | None  # None ⇒ no priced spawn recorded
     priced_spawns: int  # spawns that carried a total_cost_usd
     total_spawns: int  # all completed spawns seen
+    # False ⇒ the events.db exists but could NOT be read (corrupt/foreign/locked).
+    # This is deliberately distinct from a *missing* db, which is genuinely zero
+    # spend: an unreadable store means spend is UNKNOWN, and the aggregator reports
+    # that honestly rather than silently returning zero. Policy on unknown spend is
+    # the consumer's (the cost cap is a control → its checker/throttle fail safe);
+    # this layer only refuses to fabricate a zero. Missing/empty ⇒ readable=True.
+    readable: bool = True
+
+
+# A missing or empty events.db is genuinely "no recorded spend" (readable).
+_EMPTY_TOTALS = CostTotals(total_cost_usd=None, priced_spawns=0, total_spawns=0)
+# A present-but-unreadable store: spend is unknown, not zero.
+_UNREADABLE_TOTALS = CostTotals(
+    total_cost_usd=None, priced_spawns=0, total_spawns=0, readable=False
+)
 
 
 def _as_cost(value: object) -> float | None:
@@ -64,10 +83,21 @@ class CostAggregator:
         # A read-only aggregation must not create the store: a project that never
         # spawned has no events.db and totals to zero.
         if not db_path.exists():
-            return CostTotals(total_cost_usd=None, priced_spawns=0, total_spawns=0)
+            return _EMPTY_TOTALS
 
-        with closing(EventStore(db_path)) as store:
-            completed = store.read_by_type(_COMPLETED)
+        try:
+            with closing(EventStore(db_path)) as store:
+                completed = store.read_by_type(_COMPLETED)
+        except (sqlite3.Error, OSError) as exc:
+            # A present-but-unreadable events.db (corrupt/truncated/foreign file,
+            # an interrupted dual-write, disk failure) must not crash the caller —
+            # the daemon self-throttle reads this from inside a scheduled task,
+            # where an unhandled raise is recorded as a task failure every cycle.
+            # Report spend as UNKNOWN (readable=False), NOT zero: silently reading
+            # zero would let a corrupt store defeat the cost cap (throttle never
+            # trips, checker reports "within"). Consumers fail safe on unknown.
+            log.warning("unreadable events.db at %s: %s", db_path, exc)
+            return _UNREADABLE_TOTALS
 
         total: float | None = None
         priced = 0

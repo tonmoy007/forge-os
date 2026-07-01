@@ -13,6 +13,7 @@ from typing import Any
 from forge_os.core.state_manager import utc_now
 from forge_os.daemon.scheduler import ScheduledTask
 from forge_os.daemon.state import DaemonStateError, DaemonStateStore
+from forge_os.daemon.throttle import CostThrottle, TaskRun, throttle_gate
 
 HEARTBEAT_INTERVAL_SECONDS = 30.0
 
@@ -42,7 +43,7 @@ def build_scheduled_tasks(
             run=heartbeat,
         )
     ]
-    tasks.extend(_dreamer_tasks(project_root))
+    tasks.extend(_dreamer_tasks(project_root, forge_dir))
     tasks.extend(_observer_tasks(project_root, forge_dir))
     return tasks
 
@@ -53,8 +54,15 @@ DREAMER_DAILY_INTERVAL_SECONDS = 86_400.0
 DREAMER_WEEKLY_INTERVAL_SECONDS = 604_800.0
 
 
-def _dreamer_tasks(project_root: Path) -> list[ScheduledTask]:
-    """Dreamer maintenance tasks (P10.05-09) — propose-only, never destructive."""
+def _dreamer_tasks(project_root: Path, forge_dir: Path | None) -> list[ScheduledTask]:
+    """Dreamer maintenance tasks (P10.05-09) — propose-only, never destructive.
+
+    These are the daemon's cost-incurring maintenance surface (LLM consolidation),
+    so each run is wrapped in the always-on cost self-throttle (FR-COST-004): when
+    recorded spend approaches the configured cap the task skips and alerts instead
+    of spending more. Uncapped ⇒ the gate is a pass-through and the task runs
+    exactly as before.
+    """
 
     # Imported lazily for symmetry with _observer_tasks and to keep daemon
     # package import light when tasks are never built.
@@ -79,11 +87,18 @@ def _dreamer_tasks(project_root: Path) -> list[ScheduledTask]:
             "lessons_proposed": len(result["lessons_proposed"]),
         }
 
-    return [
-        ScheduledTask("dreamer-digest", DREAMER_DAILY_INTERVAL_SECONDS, digest),
-        ScheduledTask("dreamer-decay", DREAMER_DAILY_INTERVAL_SECONDS, decay),
-        ScheduledTask("dreamer-reingest", DREAMER_WEEKLY_INTERVAL_SECONDS, reingest),
+    throttle = CostThrottle(project_root)
+    store = DaemonStateStore(forge_dir)
+
+    def gated(name: str, run: TaskRun) -> TaskRun:
+        return throttle_gate(run, throttle=throttle, store=store, task_name=name)
+
+    specs: list[tuple[str, float, TaskRun]] = [
+        ("dreamer-digest", DREAMER_DAILY_INTERVAL_SECONDS, digest),
+        ("dreamer-decay", DREAMER_DAILY_INTERVAL_SECONDS, decay),
+        ("dreamer-reingest", DREAMER_WEEKLY_INTERVAL_SECONDS, reingest),
     ]
+    return [ScheduledTask(name, interval, gated(name, run)) for name, interval, run in specs]
 
 
 def _observer_tasks(project_root: Path, forge_dir: Path | None) -> list[ScheduledTask]:
