@@ -59,8 +59,8 @@ emit + local sink + optional OTLP + `forge trace`; the dashboard and `network` a
 deliverable by a local CLI and are explicitly deferred (do not claim FR-OBS-001 fully satisfied). One PR
 per slice (4):
 - [x] S1 — neutral `Span` model + correlation/trace index → PR #53 (merged 2026-07-01)
-- [ ] S2 — local JSONL sink + `DualStreamTracer` (default off); `load_tracing_config` reads `features.tracing` (← this slice)
-- [ ] S3 — `use_cases/observability.py` + `forge trace <id>`
+- [x] S2 — local JSONL sink + `DualStreamTracer` (default off); `load_tracing_config` reads `features.tracing` → PR #54 (merged 2026-07-01)
+- [ ] S3 — `use_cases/observability.py` + `forge trace <id>` (← this slice)
 - [ ] S4 — (optional) OTLP exporter behind the `[tracing]` extra + gated daemon export task
 
 ### S1 gate
@@ -120,6 +120,32 @@ per slice (4):
    only always-on change is scaffolding one extra empty file (`.forge/traces/spans.jsonl`) — additive.
    Reads are best-effort: a missing/corrupt events.db and malformed audit lines degrade to fewer spans,
    never a crash. Core + canonical schemas untouched.
+
+### S3 gate
+1. **SRS:** FR-SEM-002 (`forge trace <trace_id>`, verbatim) + FR-OBS-001 (the correlated-trace surface).
+   S3 is the read side: a `forge trace` CLI over the S2 projection. **Deviations (documented in code):**
+   (a) reads the **live** `DualStreamTracer.collect()` projection, NOT the sink — a diagnostic read must
+   work on a default (tracing-off) project where the sink is empty; the sink/`emit` stay the OTLP-export
+   path (S4). This supersedes the S2 RESUME "reads the sink" note. (b) still MVP subset — no dashboard,
+   no OTLP (S4). (c) bare `forge trace` lists traces; `forge trace <id>` shows one — an ergonomic superset
+   of the named command.
+2. **Files (all additive; core untouched):** NEW `schemas/observability.py` (`SpanView`, `TraceSummary`,
+   `TraceListReport`, `TraceDetail` — pure pydantic, mirrors `schemas/cost.py`); NEW
+   `use_cases/observability.py` (`ObservabilityUseCases.list_traces()` / `.get_trace(id)` → domain models
+   via `TraceIndex`, tracer injectable); NEW `cli/commands/observability.py` (`trace_command` — Rich list/
+   detail + `--json`, markup-escaped); `cli/main.py` (+import; `app.command("trace")(trace_command)` —
+   **top-level**, not `add_typer`, because a positional arg on a group is parsed as a subcommand name,
+   proven by probe: `trace <id> --json` → exit 2 on a group); NEW `tests/test_use_cases_observability.py`
+   + `tests/test_cli_observability.py`. No `schemas/{config,state,security}.py` / `core/` edits.
+3. **Verify:** use case — `get_trace` returns time-ordered spans + rollup (error > ok > unset), unknown id
+   → `found=False`/empty, audit trace standalone (kinds=["audit"], denied→error), `list_traces` summarizes
+   both streams sorted by (start_time, trace_id), empty project → [], reads live (sink empty but trace
+   found). CLI — bare lists; `<id>` detail; **`trace <id> --json` parses** (the group-trap regression);
+   unknown → "No spans" exit 0; empty → "No traces" exit 0; missing project → exit 1; trace_id markup
+   escaped; registered on the top-level `app`; list `--json`. Host + clean `python:3.12-slim` Docker.
+4. **What breaks:** nothing existing — additive schema + use case + a new top-level command + one register
+   line. Read-only: builds views from `collect()` (no writes, no state mutation), degrades on bad sources
+   (inherits S2 tolerance). No other command touched.
 
 ## Done — Always-on daemon monitor (FR-HD-003/005, FR-COST-004, owner greenlit 2026-06-25, completed 2026-07-01)
 

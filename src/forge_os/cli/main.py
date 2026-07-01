@@ -43,6 +43,7 @@ from forge_os.cli.commands.doctor import doctor_app
 from forge_os.cli.commands.dreamer import dreamer_app
 from forge_os.cli.commands.health import health_app
 from forge_os.cli.commands.lazy_context import lazy_budget, lazy_stats
+from forge_os.cli.commands.observability import trace_command
 from forge_os.cli.commands.plug import plug_app
 from forge_os.cli.commands.security import security_app
 from forge_os.config.loader import ConfigError, load_config
@@ -104,6 +105,9 @@ app.add_typer(cost_app, name="cost")
 # Phase 11 extension management + channels
 app.add_typer(plug_app, name="plug")
 app.add_typer(channel_app, name="channel")
+# `forge trace <trace_id>` — top-level command (a positional arg on a group would
+# be parsed as a subcommand name), mirroring the lazy-context registration above.
+app.command("trace")(trace_command)
 
 # ─── Explain Topics ────────────────────────────────────────────────────────────
 
