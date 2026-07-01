@@ -49,7 +49,42 @@ review findings fixed (vacuous list test, uncaught `OSError`→`ConfigError`, ke
    same as doctor `--fix`); the scaffolded config has none. Atomic write (tempfile + `os.replace`) so a
    crash mid-write can't truncate `config.yaml`.
 
-## Active — Always-on daemon monitor (FR-HD-003/005, FR-COST-004, owner greenlit 2026-06-25)
+## Active — OTLP dual-stream tracing (FR-OBS-001, FR-SEM-002, owner greenlit 2026-07-01)
+
+Owner-authored scope: `plan/SCOPE-observability-cost-backlog.md` §#2. Turn reasoning spans (Event Store
+adapter events, `stream_id`=run_id) and runtime-audit spans (`security-audit.jsonl`) into neutral spans —
+local `.forge/traces/spans.jsonl` sink by default; OTLP export only behind a new optional `[tracing]`
+extra when `features.tracing.otlp_endpoint` is set. Adds `forge trace <id>` (FR-SEM-002). **MVP subset**:
+emit + local sink + optional OTLP + `forge trace`; the dashboard and `network` audit-span source are NOT
+deliverable by a local CLI and are explicitly deferred (do not claim FR-OBS-001 fully satisfied). One PR
+per slice (4):
+- [ ] S1 — neutral `Span` model + correlation/trace index (← this slice)
+- [ ] S2 — local JSONL sink + `DualStreamTracer` (default off); `load_tracing_config` reads `features.tracing`
+- [ ] S3 — `use_cases/observability.py` + `forge trace <id>`
+- [ ] S4 — (optional) OTLP exporter behind the `[tracing]` extra + gated daemon export task
+
+### S1 gate
+1. **SRS:** FR-OBS-001 ("Dual-Stream Tracing — reasoning spans + runtime-audit spans, correlated,
+   exported via OTLP") + FR-SEM-002 (`forge trace <trace_id>`). S1 delivers the dep-free foundation: the
+   neutral `Span` data model and the correlation/trace index that groups spans into traces. **Deviations
+   (scope §#2, documented in code):** (c) there is no shared `session_id` at these boundaries — reasoning
+   spans correlate by run_id (=Event Store `stream_id`), audit entries stand alone by `audit_id`; the
+   index does NOT fabricate cross-stream linkage. (b) dashboard + `network` audit spans deferred. No span
+   emission/sink yet (S2); no config, no CLI, no optional dep this slice.
+2. **Files:** NEW `schemas/tracing.py` (`Span` — neutral/OTLP-mappable: trace_id, span_id,
+   parent_span_id, name, kind, start_time, end_time, status, attributes; `SpanKind{reasoning,audit}`;
+   `SpanStatus{ok,error,unset}` — pure pydantic, zero forge_os imports); NEW `tracing/__init__.py` +
+   `tracing/index.py` (`TraceIndex` — group a span collection by trace_id, time-ordered retrieval for
+   `forge trace`); NEW `tests/test_schemas_tracing.py` + `tests/test_tracing_index.py`. **Core untouched**
+   — a new (non-canonical) schema file + a new domain module; nothing imports them yet.
+3. **Verify:** `Span` round-trips + defaults + `extra="allow"`; `SpanKind`/`SpanStatus` values; `TraceIndex`
+   groups by trace_id, `spans_for` returns a stable time-sorted list, `trace_ids()`, empty input, unknown
+   trace_id, a multi-span reasoning trace (same trace_id groups) vs standalone audit spans (distinct
+   trace_ids). Host + clean `python:3.12-slim` Docker.
+4. **What breaks:** nothing — purely additive new files; no existing module imports them, so no behavior
+   changes. No config/CLI/core touched; the optional `opentelemetry` dep is untouched (that is S4).
+
+## Done — Always-on daemon monitor (FR-HD-003/005, FR-COST-004, owner greenlit 2026-06-25, completed 2026-07-01)
 
 Owner-authored scope: `plan/SCOPE-observability-cost-backlog.md` §#4. Default-off daemon task (Observer
 pattern) that checks token budget, hook latency, and a cost cap — surfacing `DaemonAlert`s and
@@ -60,7 +95,7 @@ self-throttling. One PR per slice (6); start with the blocking prereq:
 - [x] S4 — `CostAggregator` + `HealthMonitorConfig` (alert-only; absolute config cap, not the
       unimplementable "% of monthly budget") → PR #50 (merged).
 - [x] S5 — self-throttle: cost-incurring daemon maintenance (Dreamer) skips + alerts near the cap → PR #51 (merged).
-- [ ] S6 — gated `_health_monitor_tasks`: periodic checker sweep → `DaemonAlert`s, behind `features.health_monitor` (default off) (← this slice)
+- [x] S6 — gated `_health_monitor_tasks`: periodic checker sweep → `DaemonAlert`s, behind `features.health_monitor` (default off) → PR #52 (merged). **Workstream complete.**
 
 ### S1 gate
 1. **SRS:** FR-HD-005 (existing — "Monitors hook execution time; persistently slow hooks flagged").
