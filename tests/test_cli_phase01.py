@@ -20,6 +20,7 @@ EXPECTED_INIT_PATHS = [
     ".forge/events.jsonl",
     ".forge/session-log.jsonl",
     ".forge/security-audit.jsonl",
+    ".forge/traces/spans.jsonl",
     ".forge/lessons.yaml",
     ".forge/reflections",
     ".forge/patterns.jsonl",

@@ -155,6 +155,7 @@ def initialize_project(
     for directory in (
         root / ".forge",
         root / ".forge" / "reflections",
+        root / ".forge" / "traces",
         root / ".forge" / "agents",
         root / ".forge" / "agents" / "personas",
         root / ".forge" / "agents" / "contracts",
@@ -181,6 +182,7 @@ def initialize_project(
     _write_text(root / ".forge" / "context-selections.jsonl", "", overwrite=overwrite)
     _write_text(root / ".forge" / "hook-timings.jsonl", "", overwrite=overwrite)
     _write_text(root / ".forge" / "security-audit.jsonl", "", overwrite=overwrite)
+    _write_text(root / ".forge" / "traces" / "spans.jsonl", "", overwrite=overwrite)
     _write_text(
         root / ".forge" / "lessons.yaml",
         _yaml_dump({"schema_version": "0.1", "lessons": []}),
