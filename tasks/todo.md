@@ -58,8 +58,8 @@ extra when `features.tracing.otlp_endpoint` is set. Adds `forge trace <id>` (FR-
 emit + local sink + optional OTLP + `forge trace`; the dashboard and `network` audit-span source are NOT
 deliverable by a local CLI and are explicitly deferred (do not claim FR-OBS-001 fully satisfied). One PR
 per slice (4):
-- [ ] S1 — neutral `Span` model + correlation/trace index (← this slice)
-- [ ] S2 — local JSONL sink + `DualStreamTracer` (default off); `load_tracing_config` reads `features.tracing`
+- [x] S1 — neutral `Span` model + correlation/trace index → PR #53 (merged 2026-07-01)
+- [ ] S2 — local JSONL sink + `DualStreamTracer` (default off); `load_tracing_config` reads `features.tracing` (← this slice)
 - [ ] S3 — `use_cases/observability.py` + `forge trace <id>`
 - [ ] S4 — (optional) OTLP exporter behind the `[tracing]` extra + gated daemon export task
 
@@ -83,6 +83,43 @@ per slice (4):
    trace_ids). Host + clean `python:3.12-slim` Docker.
 4. **What breaks:** nothing — purely additive new files; no existing module imports them, so no behavior
    changes. No config/CLI/core touched; the optional `opentelemetry` dep is untouched (that is S4).
+
+### S2 gate
+1. **SRS:** FR-OBS-001 ("Dual-Stream Tracing — reasoning + runtime-audit spans, correlated, exported via
+   OTLP") + FR-SEM-002 (`forge trace`). S2 delivers the *local emission foundation*: a `DualStreamTracer`
+   that projects the two append-only sources into neutral `Span`s and a default-off local JSONL sink they
+   land in. **Deviations (scope §#2, documented in code):** (a) MVP subset — no OTLP export yet (S4), no
+   `forge trace` CLI yet (S3), no dashboard/`network` audit spans (not deliverable by a local CLI). (b)
+   emission is **default-off** — a project traces nothing until `features.tracing` is enabled. (c) no shared
+   `session_id` at these boundaries — reasoning spans key on run_id (= Event Store `stream_id`), audit
+   entries stand alone by `audit_id`; the tracer fabricates no cross-stream link. (d) **Sink is a snapshot,
+   not an append** (superseding the RESUME "atomic append" note): `collect()` re-projects the *full* sources
+   each call, so `SpanSink.write` replaces the file atomically (tempfile + `os.replace`) — re-emitting is
+   idempotent and can't duplicate; an incremental cursor is deferred to S4 (where a repeat caller exists).
+2. **Files (all additive; core untouched):** NEW `tracing/config.py` (`TracingConfig` +
+   `load_tracing_config(features)` / `load_tracing_config_from_project(root)`, mirrors
+   `health/monitor_config.py`: bare `tracing: true` or a mapping, default off, both `ConfigError` classes
+   tolerated); NEW `tracing/sink.py` (`SpanSink` — atomic snapshot `write` + tolerant `read_all` over
+   `.forge/traces/spans.jsonl`); NEW `tracing/tracer.py` (`DualStreamTracer` + pure builders
+   `reasoning_spans_from_rows` / `audit_spans_from_entries`); `tracing/__init__.py` (+exports);
+   `project/scaffold.py` (+`.forge/traces/spans.jsonl`); NEW `tests/test_tracing_{config,sink,tracer}.py`;
+   `tests/test_cli_phase01.py` (+scaffold path). No `schemas/config.py` / `core/` edits; `opentelemetry`
+   dep untouched (S4).
+3. **Verify:** config — default off, bare `true` on, mapping enabled/endpoint, garbage → off, blank/non-str
+   endpoint → None, missing/broken config file → off. sink — write→read round-trip, snapshot (re-write
+   replaces, no dup), empty truncates, missing file → [], skips malformed lines, no temp leftover, extra
+   attrs survive. tracer — reasoning field/status mapping (Failed→ERROR, Completed→OK, else UNSET),
+   malformed payload → empty attrs (span kept), structurally-unusable rows skipped; audit field/status
+   mapping (denied/failed→ERROR, allowed/warned→OK), skips missing audit_id/timestamp + non-dict, missing
+   action → generic name; `collect` combines + indexes (reasoning multi-span trace vs standalone audit),
+   missing events.db → audit-only + db not created, corrupt events.db → degrades, malformed audit line
+   skipped; `emit` default-off writes nothing, enabled writes the projection (via injected config AND
+   project config.yaml), idempotent, honors injected sink. Host + clean `python:3.12-slim` Docker.
+4. **What breaks:** nothing by default — the tracer is imported by no existing module and emits only when
+   `features.tracing` is enabled (off in every scaffolded project), so existing projects trace nothing. The
+   only always-on change is scaffolding one extra empty file (`.forge/traces/spans.jsonl`) — additive.
+   Reads are best-effort: a missing/corrupt events.db and malformed audit lines degrade to fewer spans,
+   never a crash. Core + canonical schemas untouched.
 
 ## Done — Always-on daemon monitor (FR-HD-003/005, FR-COST-004, owner greenlit 2026-06-25, completed 2026-07-01)
 
