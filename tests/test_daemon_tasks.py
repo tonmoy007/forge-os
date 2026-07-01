@@ -7,7 +7,11 @@ from pathlib import Path
 import pytest
 
 from forge_os.daemon.state import DaemonStateError, DaemonStateStore
-from forge_os.daemon.tasks import HEARTBEAT_INTERVAL_SECONDS, build_scheduled_tasks
+from forge_os.daemon.tasks import (
+    HEALTH_MONITOR_INTERVAL_SECONDS,
+    HEARTBEAT_INTERVAL_SECONDS,
+    build_scheduled_tasks,
+)
 from forge_os.schemas.daemon import DaemonState
 
 
@@ -145,6 +149,25 @@ def test_dreamer_digest_task_reports_no_write_for_quiet_project(tmp_path: Path) 
     result = tasks["dreamer-digest"].run()
 
     assert result == {"written": False, "path": None}
+
+
+def test_health_monitor_task_absent_when_feature_off(tmp_path: Path) -> None:
+    # features.health_monitor absent ⇒ no sweep task (default-off).
+    write_project_config(tmp_path, "false")  # only sets observer; health_monitor absent
+    names = [t.name for t in build_scheduled_tasks(tmp_path, forge_dir=tmp_path / "forge")]
+    assert "health-monitor" not in names
+
+
+def test_health_monitor_task_registered_when_enabled(tmp_path: Path) -> None:
+    forge = tmp_path / ".forge"
+    forge.mkdir(parents=True, exist_ok=True)
+    (forge / "config.yaml").write_text(
+        "schema_version: '0.1'\nproject:\n  name: demo\nfeatures:\n  health_monitor: true\n",
+        encoding="utf-8",
+    )
+    tasks = {t.name: t for t in build_scheduled_tasks(tmp_path, forge_dir=tmp_path / "forge")}
+    assert "health-monitor" in tasks
+    assert tasks["health-monitor"].interval_seconds == HEALTH_MONITOR_INTERVAL_SECONDS
 
 
 def test_dreamer_task_throttles_when_spend_over_cost_cap(tmp_path: Path) -> None:
