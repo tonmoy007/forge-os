@@ -35,6 +35,18 @@ def write_project_config(project_root: Path, observer_value: str) -> None:
     )
 
 
+def write_cost_cap_config(project_root: Path, cost_cap_usd: float) -> None:
+    forge = project_root / ".forge"
+    forge.mkdir(parents=True, exist_ok=True)
+    (forge / "config.yaml").write_text(
+        "schema_version: '0.1'\n"
+        "project:\n  name: demo\n"
+        "features:\n  health_monitor:\n"
+        f"    cost_cap_usd: {cost_cap_usd}\n",
+        encoding="utf-8",
+    )
+
+
 def test_build_returns_heartbeat_and_dreamer_tasks_by_default(tmp_path: Path) -> None:
     tasks = build_scheduled_tasks(tmp_path, forge_dir=tmp_path / "forge")
 
@@ -133,3 +145,33 @@ def test_dreamer_digest_task_reports_no_write_for_quiet_project(tmp_path: Path) 
     result = tasks["dreamer-digest"].run()
 
     assert result == {"written": False, "path": None}
+
+
+def test_dreamer_task_throttles_when_spend_over_cost_cap(tmp_path: Path) -> None:
+    # FR-COST-004 self-throttle: a Dreamer maintenance task built by
+    # build_scheduled_tasks skips its work and reports throttled when recorded
+    # spend is over the configured cap — proving the gate is wired into the builder.
+    from forge_os.events.store import EventStore
+    from forge_os.memory.lessons import LessonStore
+
+    forge_dir = tmp_path / "forge"
+    seed_state(DaemonStateStore(forge_dir=forge_dir))
+    write_cost_cap_config(tmp_path, cost_cap_usd=10.0)
+    events = EventStore(tmp_path / ".forge" / "events.db")
+    events.append(
+        "r1",
+        "AdapterSpawnCompleted",
+        {"adapter": "claude_code", "metadata": {"total_cost_usd": 50.0}},
+    )
+    events.close()
+    # An approved lesson so an un-throttled decay would return {"examined": 1}.
+    lessons = LessonStore(tmp_path)
+    approved = lessons.add("fresh lesson", confidence=0.9)
+    _ = lessons.approve(approved.id)
+
+    tasks = {task.name: task for task in build_scheduled_tasks(tmp_path, forge_dir=forge_dir)}
+    result = tasks["dreamer-decay"].run()
+
+    assert result is not None
+    assert result["throttled"] is True
+    assert "examined" not in result  # the decay body did NOT run

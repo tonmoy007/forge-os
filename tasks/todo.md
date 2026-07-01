@@ -57,9 +57,9 @@ self-throttling. One PR per slice (6); start with the blocking prereq:
 - [x] **S1 — hook-timing instrumentation (prereq)** — FR-HD-005 hook timing isn't recorded today. → PR #46 (merged).
 - [x] S2 — `HookLatencyHealthChecker` → PR #48 (merged).
 - [x] S3 — per-session token checker (reads the existing `.forge/context-selections.jsonl`) → PR #49 (merged).
-- [ ] S4 — `CostAggregator` + `HealthMonitorConfig` (alert-only; absolute config cap, not the
-      unimplementable "% of monthly budget")
-- [ ] S5 — self-throttle flag honored by dreamer/observer/health tasks
+- [x] S4 — `CostAggregator` + `HealthMonitorConfig` (alert-only; absolute config cap, not the
+      unimplementable "% of monthly budget") → PR #50 (merged).
+- [ ] S5 — self-throttle: cost-incurring daemon maintenance (Dreamer) skips + alerts near the cap (← this slice)
 - [ ] S6 — gate `_health_monitor_tasks` behind `features.health_monitor` (default off)
 
 ### S1 gate
@@ -136,6 +136,36 @@ self-throttling. One PR per slice (6); start with the blocking prereq:
    surfaces in `forge health check`. Host + clean `python:3.12-slim` Docker.
 4. **What breaks:** nothing — additive read-only modules; `run_full_check` isolates a crash. Default
    off-path: no `cost_cap_usd` configured ⇒ healthy/inert, so existing projects are unaffected.
+
+### S5 gate
+1. **SRS:** FR-COST-004 ("… daemon self-throttles when approaching cap"). No new FR. Inherits the two
+   S4 deviations (absolute config cap; TOTAL recorded spend, so the throttle is a lifetime, not monthly,
+   cap — sticky until the cap is raised, consistent with S4). **Interpretation (documented in
+   `daemon/throttle.py`):** the scope names "dreamer/observer/health tasks", but the throttle target is
+   the daemon's *cost-incurring* maintenance — the **Dreamer** tasks (digest/decay/reingest, the LLM
+   consolidation surface). Observer tasks (ACP restart/health/metrics) are operational and must keep
+   running when over budget; health-monitor tasks (S6) are the monitors that *detect* the overage —
+   throttling either would be self-defeating, so both are intentionally excluded. Skill Miner is a
+   persona, not a daemon task (scope §#4(d)) — out of scope.
+2. **Files:** NEW `daemon/throttle.py` (`CostThrottle` — reuses `CostAggregator` + the resolved
+   `HealthMonitorConfig.cost_cap_usd` + the checker's `CAP_WARN_RATIO`; `ThrottleDecision`; a stateless
+   `throttle_gate(run, …)` that skips the inner run + emits a deduped `DaemonAlert` via
+   `DaemonStateStore.add_alert` when throttled); `daemon/tasks.py` (`_dreamer_tasks` gains `forge_dir`,
+   wraps each dreamer run in the gate); NEW `tests/test_daemon_throttle.py`; extend
+   `tests/test_daemon_tasks.py`. **Core untouched** — new domain module + a wrapper in the task builder;
+   no schema edits (`DaemonState`/`DaemonAlert` reused as-is; the alert is the observable signal).
+3. **Verify:** `CostThrottle.evaluate` — no cap ⇒ not throttled; below `CAP_WARN_RATIO` ⇒ not throttled;
+   at/above ratio and over cap ⇒ throttled; cap resolved from `.forge/config.yaml`; broken config ⇒
+   uncapped (not throttled). `throttle_gate` — when throttled: inner run NOT invoked (sentinel proves
+   it), returns `{"throttled": True, …}`, records exactly one deduped alert; when clear: inner run
+   invoked, its result passes through, no alert; missing daemon state ⇒ best-effort (no crash, no
+   alert). Dreamer tasks built by `build_scheduled_tasks` skip their side effect when over cap.
+   Host + clean `python:3.12-slim` Docker.
+4. **What breaks:** nothing when uncapped — no cap ⇒ `evaluate` returns not-throttled, the gate is a
+   pass-through, dreamer runs exactly as before. Risk: a throttle gate that mis-evaluates could silently
+   suppress the Dreamer → mitigated by the sentinel-proven "clear ⇒ inner runs" test and the uncapped
+   pass-through test. The per-run cost read is a cheap `.forge/events.db` aggregation (no new I/O on the
+   uncapped path beyond the existing S4 read, which returns early when no events.db exists).
 
 ## Done — `forge doctor --fix` (FR-HD-007, completed 2026-06-25)
 
