@@ -11,7 +11,11 @@ This is the config seam the cost-cap checker reads now and the daemon task
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+
+from forge_os.config.loader import ConfigError, load_config
+from forge_os.schemas.config import ConfigError as SchemaConfigError
 
 
 @dataclass(frozen=True)
@@ -44,3 +48,20 @@ def load_health_monitor_config(features: dict[str, Any]) -> HealthMonitorConfig:
         enabled=enabled if isinstance(enabled, bool) else False,
         cost_cap_usd=_positive_float(section.get("cost_cap_usd")),
     )
+
+
+def resolve_cost_cap_usd(project_root: Path) -> float | None:
+    """Resolve the configured always-on cost cap for a project, or None.
+
+    Loads `.forge/config.yaml` and reads `features.health_monitor.cost_cap_usd`.
+    A broken config — either the loader's `ConfigError` or the schema's separate
+    `ConfigError` (which pydantic does not wrap) — resolves to None (uncapped),
+    so a malformed file never makes the cost-cap machinery flag or throttle
+    spuriously. Shared by the cost-cap health checker and the daemon self-throttle.
+    """
+
+    try:
+        config = load_config(project_root / ".forge" / "config.yaml")
+    except (ConfigError, SchemaConfigError):
+        return None
+    return load_health_monitor_config(config.features).cost_cap_usd
