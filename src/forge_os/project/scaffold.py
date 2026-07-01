@@ -81,6 +81,10 @@ def _build_config(
             # Set to true (or a mapping with cost_cap_usd) to enable the periodic
             # health sweep + cost self-throttle.
             "health_monitor": False,
+            # Dual-stream tracing (FR-OBS-001): off by default. Set to a mapping
+            # `{enabled: true, otlp_endpoint: <url>}` to emit spans and (with the
+            # optional `[tracing]` extra) export them to an OTLP collector.
+            "tracing": False,
         },
     )
 

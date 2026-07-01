@@ -7,6 +7,7 @@ list returned from `build_scheduled_tasks`. Observer tasks are gated on the
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,8 @@ from forge_os.core.state_manager import utc_now
 from forge_os.daemon.scheduler import ScheduledTask
 from forge_os.daemon.state import DaemonStateError, DaemonStateStore
 from forge_os.daemon.throttle import CostThrottle, TaskRun, throttle_gate
+
+log = logging.getLogger("forge.daemon.tasks")
 
 HEARTBEAT_INTERVAL_SECONDS = 30.0
 
@@ -46,6 +49,7 @@ def build_scheduled_tasks(
     tasks.extend(_dreamer_tasks(project_root, forge_dir))
     tasks.extend(_observer_tasks(project_root, forge_dir))
     tasks.extend(_health_monitor_tasks(project_root, forge_dir))
+    tasks.extend(_tracing_export_tasks(project_root))
     return tasks
 
 
@@ -125,6 +129,58 @@ def _health_monitor_tasks(project_root: Path, forge_dir: Path | None) -> list[Sc
             name="health-monitor",
             interval_seconds=HEALTH_MONITOR_INTERVAL_SECONDS,
             run=monitor.check,
+        )
+    ]
+
+
+# FR-OBS-001: the daemon ships the local span projection to a configured OTLP
+# collector. Five-minute cadence — export is I/O to a user collector, not
+# latency-critical, and this bounds request volume.
+TRACING_EXPORT_INTERVAL_SECONDS = 300.0
+
+
+def _tracing_export_tasks(project_root: Path) -> list[ScheduledTask]:
+    """Return the OTLP export task when tracing is enabled AND an endpoint is set.
+
+    Gated three ways: `features.tracing.enabled` is on, `otlp_endpoint` is
+    configured, and the optional `[tracing]` extra is installed. Configured but
+    without the extra ⇒ log once and stay inert (never a silent no-op, never a
+    crash). Default off, so an ordinary project schedules no export task.
+    """
+
+    from forge_os.tracing.config import load_tracing_config_from_project
+
+    config = load_tracing_config_from_project(project_root)
+    if not (config.enabled and config.otlp_endpoint):
+        return []
+
+    from forge_os.tracing.otlp import otlp_available
+
+    if not otlp_available():
+        log.warning(
+            "tracing.otlp_endpoint is set but OTLP export is disabled: the "
+            "optional `[tracing]` extra is not installed (pip install "
+            "'forge-os[tracing]')."
+        )
+        return []
+
+    endpoint = config.otlp_endpoint
+
+    def export() -> dict[str, Any] | None:
+        from forge_os.tracing.otlp import export_spans
+        from forge_os.tracing.tracer import DualStreamTracer
+
+        tracer = DualStreamTracer(project_root)
+        spans = tracer.collect()
+        tracer.emit()  # keep the local sink in sync with what was exported
+        ok = export_spans(spans, endpoint)
+        return {"exported": len(spans), "ok": ok}
+
+    return [
+        ScheduledTask(
+            name="tracing-export",
+            interval_seconds=TRACING_EXPORT_INTERVAL_SECONDS,
+            run=export,
         )
     ]
 
