@@ -60,8 +60,8 @@ deliverable by a local CLI and are explicitly deferred (do not claim FR-OBS-001 
 per slice (4):
 - [x] S1 — neutral `Span` model + correlation/trace index → PR #53 (merged 2026-07-01)
 - [x] S2 — local JSONL sink + `DualStreamTracer` (default off); `load_tracing_config` reads `features.tracing` → PR #54 (merged 2026-07-01)
-- [ ] S3 — `use_cases/observability.py` + `forge trace <id>` (← this slice)
-- [ ] S4 — (optional) OTLP exporter behind the `[tracing]` extra + gated daemon export task
+- [x] S3 — `use_cases/observability.py` + `forge trace <id>` → PR #55 (merged 2026-07-01)
+- [ ] S4 — (optional) OTLP exporter behind the `[tracing]` extra + gated daemon export task (← this slice)
 
 ### S1 gate
 1. **SRS:** FR-OBS-001 ("Dual-Stream Tracing — reasoning spans + runtime-audit spans, correlated,
@@ -146,6 +146,35 @@ per slice (4):
 4. **What breaks:** nothing existing — additive schema + use case + a new top-level command + one register
    line. Read-only: builds views from `collect()` (no writes, no state mutation), degrades on bad sources
    (inherits S2 tolerance). No other command touched.
+
+### S4 gate
+1. **SRS:** FR-OBS-001 ("exported via OTLP"). Completes the MVP subset: optional OTLP export of the neutral
+   spans + a gated daemon export task. **Deviations (documented in code):** (a) OTLP lives behind a new
+   optional `[tracing]` extra — off by default, never required (the local sink + `forge trace` work without
+   it), L004-clean (base install needs no server; the endpoint is the user's own collector). (b) still no
+   dashboard / `network` audit spans (not deliverable by a local CLI). (c) neutral string ids (run_id /
+   audit_id / event_id) are hashed **deterministically** (SHA-256) to OTLP's 128-bit/64-bit ids — stable
+   across runs so a backend correlates them; no randomness.
+2. **Files (additive; core untouched):** `pyproject.toml` (+`[tracing]` extra; added to `dev` so it is
+   test-covered); NEW `tracing/otlp.py` (guarded optional OTEL import — module imports cleanly without the
+   extra, `otlp_available()`; `Span`→`ReadableSpan` conversion: id hash, kind/status map, RFC3339/naive
+   start/end → epoch nanos, attribute coercion; `export_spans(spans, endpoint, *, exporter=None)` with DI;
+   `OTLPUnavailableError`); `daemon/tasks.py` (+`_tracing_export_tasks` gated on enabled + endpoint +
+   available, lazily imported, logs-once-and-inert when the extra is absent; registered in
+   `build_scheduled_tasks`); `project/scaffold.py` (+`features.tracing: false`); NEW
+   `tests/test_tracing_otlp.py` + extend `tests/test_daemon_tasks.py`. No `core/` / canonical-schema edits.
+3. **Verify:** `otlp_available` true under the extra; `_hashed_id` deterministic + non-zero + bounded
+   (128/64-bit); `_epoch_nanos` UTC-Z + naive-local + unparseable→0; attribute coercion (scalar / scalar-list
+   pass, nested/mixed/None → JSON string); `_to_readable_span` field/kind/status/parent mapping;
+   `export_spans` via injected in-memory exporter (no network) succeeds + carries the hashed ids; empty list
+   ok; `export_spans` without the extra → `OTLPUnavailableError`. Daemon: task absent by default / without
+   endpoint / when the extra is monkeypatched absent; present (300s) when enabled + endpoint. Host + clean
+   `python:3.12-slim` Docker (the `[dev]` extra now installs opentelemetry, so the exporter is exercised in
+   Docker too).
+4. **What breaks:** nothing by default — the export task is absent unless `features.tracing` is enabled with
+   an `otlp_endpoint`, and the base install has no OTEL dependency (the module imports inert without it). A
+   configured-but-extra-absent project logs one warning and schedules no task (never a silent no-op, never a
+   crash). Core + canonical schemas untouched.
 
 ## Done — Always-on daemon monitor (FR-HD-003/005, FR-COST-004, owner greenlit 2026-06-25, completed 2026-07-01)
 

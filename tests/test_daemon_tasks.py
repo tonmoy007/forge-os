@@ -51,6 +51,50 @@ def write_cost_cap_config(project_root: Path, cost_cap_usd: float) -> None:
     )
 
 
+def write_tracing_config(project_root: Path, body: str) -> None:
+    forge = project_root / ".forge"
+    forge.mkdir(parents=True, exist_ok=True)
+    (forge / "config.yaml").write_text(
+        "schema_version: '0.1'\nproject:\n  name: demo\nfeatures:\n" + body,
+        encoding="utf-8",
+    )
+
+
+def test_tracing_export_task_absent_by_default(tmp_path: Path) -> None:
+    tasks = build_scheduled_tasks(tmp_path, forge_dir=tmp_path / "forge")
+    assert "tracing-export" not in [t.name for t in tasks]
+
+
+def test_tracing_export_task_absent_without_endpoint(tmp_path: Path) -> None:
+    # enabled but no otlp_endpoint ⇒ nothing to export to.
+    write_tracing_config(tmp_path, "  tracing:\n    enabled: true\n")
+    tasks = build_scheduled_tasks(tmp_path, forge_dir=tmp_path / "forge")
+    assert "tracing-export" not in [t.name for t in tasks]
+
+
+def test_tracing_export_task_present_when_enabled_with_endpoint(tmp_path: Path) -> None:
+    write_tracing_config(
+        tmp_path, "  tracing:\n    enabled: true\n    otlp_endpoint: http://c:4318\n"
+    )
+    tasks = build_scheduled_tasks(tmp_path, forge_dir=tmp_path / "forge")
+    names = [t.name for t in tasks]
+    assert "tracing-export" in names
+    task = next(t for t in tasks if t.name == "tracing-export")
+    assert task.interval_seconds == 300.0
+
+
+def test_tracing_export_task_absent_when_extra_missing(tmp_path: Path, monkeypatch) -> None:
+    # Configured for OTLP, but the optional `[tracing]` extra is not installed.
+    import forge_os.tracing.otlp as otlp
+
+    monkeypatch.setattr(otlp, "_OTEL_AVAILABLE", False)
+    write_tracing_config(
+        tmp_path, "  tracing:\n    enabled: true\n    otlp_endpoint: http://c:4318\n"
+    )
+    tasks = build_scheduled_tasks(tmp_path, forge_dir=tmp_path / "forge")
+    assert "tracing-export" not in [t.name for t in tasks]
+
+
 def test_build_returns_heartbeat_and_dreamer_tasks_by_default(tmp_path: Path) -> None:
     tasks = build_scheduled_tasks(tmp_path, forge_dir=tmp_path / "forge")
 
