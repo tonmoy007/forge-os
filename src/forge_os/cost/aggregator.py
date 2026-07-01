@@ -10,12 +10,16 @@ is the minimal "total $ so far" a cap needs.
 from __future__ import annotations
 
 import json
+import logging
 import math
+import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 
 from forge_os.events.store import EventStore
+
+log = logging.getLogger("forge.cost.aggregator")
 
 _COMPLETED = "AdapterSpawnCompleted"
 
@@ -27,6 +31,10 @@ class CostTotals:
     total_cost_usd: float | None  # None ⇒ no priced spawn recorded
     priced_spawns: int  # spawns that carried a total_cost_usd
     total_spawns: int  # all completed spawns seen
+
+
+# A missing or unreadable events.db both mean "no recorded spend we can see".
+_EMPTY_TOTALS = CostTotals(total_cost_usd=None, priced_spawns=0, total_spawns=0)
 
 
 def _as_cost(value: object) -> float | None:
@@ -64,10 +72,20 @@ class CostAggregator:
         # A read-only aggregation must not create the store: a project that never
         # spawned has no events.db and totals to zero.
         if not db_path.exists():
-            return CostTotals(total_cost_usd=None, priced_spawns=0, total_spawns=0)
+            return _EMPTY_TOTALS
 
-        with closing(EventStore(db_path)) as store:
-            completed = store.read_by_type(_COMPLETED)
+        try:
+            with closing(EventStore(db_path)) as store:
+                completed = store.read_by_type(_COMPLETED)
+        except (sqlite3.Error, OSError) as exc:
+            # A present-but-unreadable events.db (corrupt/truncated/foreign file,
+            # an interrupted dual-write, disk failure) degrades to "no spend seen"
+            # like a missing db — a best-effort read must never crash its caller.
+            # The cost-cap checker is isolated by run_full_check, but the daemon
+            # self-throttle calls us from inside a scheduled task, where an
+            # unhandled raise would be recorded as a task failure every cycle.
+            log.warning("ignoring unreadable events.db at %s: %s", db_path, exc)
+            return _EMPTY_TOTALS
 
         total: float | None = None
         priced = 0

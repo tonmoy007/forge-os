@@ -80,3 +80,13 @@ class TestCostAggregator:
         assert totals.total_cost_usd is None
         assert totals.priced_spawns == 0
         assert totals.total_spawns == 1
+
+    def test_corrupt_events_db_degrades_to_zero(self, tmp_path: Path) -> None:
+        # A present-but-unreadable events.db must degrade like a missing one, not
+        # crash the caller: the daemon self-throttle reads this from inside a
+        # scheduled task, where an unhandled raise is recorded as a failure every
+        # cycle. Guards both the S5 throttle and the S4 cost-cap checker.
+        root = _project(tmp_path)
+        (root / ".forge" / "events.db").write_bytes(b"not a sqlite database\x00\xff")
+        totals = CostAggregator(root).totals()  # must not raise
+        assert totals == CostTotals(total_cost_usd=None, priced_spawns=0, total_spawns=0)
