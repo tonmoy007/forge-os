@@ -7,6 +7,7 @@ from pathlib import Path
 from forge_os.health.monitor_config import (
     HealthMonitorConfig,
     load_health_monitor_config,
+    load_health_monitor_config_from_project,
     resolve_cost_cap_usd,
 )
 
@@ -50,6 +51,35 @@ class TestLoadHealthMonitorConfig:
 
     def test_non_bool_enabled_falls_back_to_false(self) -> None:
         assert load_health_monitor_config({"health_monitor": {"enabled": "yes"}}).enabled is False
+
+    def test_bare_true_enables(self) -> None:
+        # Mirrors the observer loader: `health_monitor: true` ⇒ enabled with defaults
+        # (so a user who writes true is not silently disabled).
+        cfg = load_health_monitor_config({"health_monitor": True})
+        assert cfg.enabled is True
+        assert cfg.cost_cap_usd is None
+
+    def test_bare_false_is_disabled(self) -> None:
+        assert load_health_monitor_config({"health_monitor": False}).enabled is False
+
+
+class TestLoadHealthMonitorConfigFromProject:
+    def test_resolves_enabled_from_config(self, tmp_path: Path) -> None:
+        _write_config(tmp_path, "features:\n  health_monitor:\n    enabled: true\n")
+        assert load_health_monitor_config_from_project(tmp_path).enabled is True
+
+    def test_bare_true_from_config(self, tmp_path: Path) -> None:
+        _write_config(tmp_path, "features:\n  health_monitor: true\n")
+        assert load_health_monitor_config_from_project(tmp_path).enabled is True
+
+    def test_missing_config_is_disabled(self, tmp_path: Path) -> None:
+        assert load_health_monitor_config_from_project(tmp_path) == HealthMonitorConfig()
+
+    def test_broken_config_is_disabled(self, tmp_path: Path) -> None:
+        forge = tmp_path / ".forge"
+        forge.mkdir(parents=True, exist_ok=True)
+        (forge / "config.yaml").write_text("just a string\n", encoding="utf-8")
+        assert load_health_monitor_config_from_project(tmp_path) == HealthMonitorConfig()
 
 
 class TestResolveCostCapUsd:

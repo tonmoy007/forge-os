@@ -59,8 +59,8 @@ self-throttling. One PR per slice (6); start with the blocking prereq:
 - [x] S3 — per-session token checker (reads the existing `.forge/context-selections.jsonl`) → PR #49 (merged).
 - [x] S4 — `CostAggregator` + `HealthMonitorConfig` (alert-only; absolute config cap, not the
       unimplementable "% of monthly budget") → PR #50 (merged).
-- [ ] S5 — self-throttle: cost-incurring daemon maintenance (Dreamer) skips + alerts near the cap (← this slice)
-- [ ] S6 — gate `_health_monitor_tasks` behind `features.health_monitor` (default off)
+- [x] S5 — self-throttle: cost-incurring daemon maintenance (Dreamer) skips + alerts near the cap → PR #51 (merged).
+- [ ] S6 — gated `_health_monitor_tasks`: periodic checker sweep → `DaemonAlert`s, behind `features.health_monitor` (default off) (← this slice)
 
 ### S1 gate
 1. **SRS:** FR-HD-005 (existing — "Monitors hook execution time; persistently slow hooks flagged").
@@ -166,6 +166,34 @@ self-throttling. One PR per slice (6); start with the blocking prereq:
    suppress the Dreamer → mitigated by the sentinel-proven "clear ⇒ inner runs" test and the uncapped
    pass-through test. The per-run cost read is a cheap `.forge/events.db` aggregation (no new I/O on the
    uncapped path beyond the existing S4 read, which returns early when no events.db exists).
+
+### S6 gate
+1. **SRS:** FR-HD-003 / FR-HD-005 / FR-COST-004 — the always-on daemon monitor "periodically checks the
+   token budget, hook latency, and a cost cap, surfacing `DaemonAlert`s" (scope §#4). No new FR. S6 is the
+   scheduling half: it runs the S2–S4 checkers (`HookLatencyHealthChecker`, `TokenBudgetHealthChecker`,
+   `CostCapHealthChecker`) on a daemon interval and raises alerts on unhealthy results. Alert-only per
+   v4.1 (no auto-disable). Default off — gated behind `features.health_monitor` (mirrors `features.observer`).
+2. **Files:** NEW `health/monitor.py` (`HealthMonitor` — runs the three checkers with per-checker crash
+   isolation like `run_full_check`, emits `DaemonAlert` via `DaemonStateStore.add_alert` on `healthy=False`,
+   best-effort on missing state like `ObserverMonitor._alert`; deps injectable for tests); `health/monitor_config.py`
+   (+`load_health_monitor_config_from_project`; accept bare `health_monitor: true` like the observer loader,
+   avoiding the "wrote true, got disabled" footgun); `daemon/tasks.py` (+`_health_monitor_tasks(project_root,
+   forge_dir)`, gated on enabled, lazily imports `HealthMonitor` to avoid the daemon↔health import cycle,
+   mirrors `_observer_tasks`); `project/scaffold.py` (scaffold `features.health_monitor: false`); NEW
+   `tests/test_health_monitor.py`; extend `tests/test_daemon_tasks.py` + `tests/test_health_monitor_config.py`.
+   **NOT throttled** — the monitors detect the overage; wrapping them in the S5 throttle gate would be
+   self-defeating (documented in `daemon/throttle.py`). **Core untouched** — new domain module + a gated
+   task builder + one scaffold key; `run_full_check` unchanged, so its **8**-subsystem count is unchanged.
+3. **Verify:** `HealthMonitor.check` — all healthy ⇒ no alert (checked=3, alerted=0); an unhealthy checker
+   ⇒ one `health-<name>` warning alert; a crashing checker is isolated (sweep continues, others still run);
+   missing daemon state ⇒ best-effort (no crash, no alert); repeated identical unhealthy ⇒ deduped by
+   `add_alert`. `_health_monitor_tasks` absent when `features.health_monitor` off/absent, present with the
+   interval when enabled (incl. bare `true`). Scaffold writes `health_monitor: false`. Host + clean
+   `python:3.12-slim` Docker.
+4. **What breaks:** nothing by default — the feature is off unless `features.health_monitor` is set, so
+   existing projects schedule no extra task. When on: a crashing checker can't kill the sweep (per-checker
+   isolation) or the daemon (TaskRunner isolation); a missing state store degrades to no-alert. The interval
+   is hourly, bounding the alert rate against the 100-entry `add_alert` cap.
 
 ## Done — `forge doctor --fix` (FR-HD-007, completed 2026-06-25)
 

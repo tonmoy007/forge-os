@@ -41,6 +41,10 @@ def load_health_monitor_config(features: dict[str, Any]) -> HealthMonitorConfig:
     """Resolve ``features.health_monitor`` to a config; never raises."""
 
     section = features.get("health_monitor")
+    # Accept a bare `health_monitor: true` (enable with defaults), mirroring the
+    # observer loader — otherwise a user who writes `true` gets silently disabled.
+    if section is True:
+        return HealthMonitorConfig(enabled=True)
     if not isinstance(section, dict):
         return HealthMonitorConfig()
     enabled = section.get("enabled", False)
@@ -50,18 +54,29 @@ def load_health_monitor_config(features: dict[str, Any]) -> HealthMonitorConfig:
     )
 
 
-def resolve_cost_cap_usd(project_root: Path) -> float | None:
-    """Resolve the configured always-on cost cap for a project, or None.
+def load_health_monitor_config_from_project(project_root: Path) -> HealthMonitorConfig:
+    """Resolve the full monitor config from a project's `.forge/config.yaml`.
 
-    Loads `.forge/config.yaml` and reads `features.health_monitor.cost_cap_usd`.
-    A broken config — either the loader's `ConfigError` or the schema's separate
-    `ConfigError` (which pydantic does not wrap) — resolves to None (uncapped),
-    so a malformed file never makes the cost-cap machinery flag or throttle
-    spuriously. Shared by the cost-cap health checker and the daemon self-throttle.
+    Mirrors ``load_observer_config``: a missing or broken config (either
+    ``ConfigError`` class) resolves to the default (disabled), so the daemon
+    monitor stays off and the daemon keeps running. This is the seam
+    ``_health_monitor_tasks`` reads for its enable gate.
     """
 
     try:
         config = load_config(project_root / ".forge" / "config.yaml")
     except (ConfigError, SchemaConfigError):
-        return None
-    return load_health_monitor_config(config.features).cost_cap_usd
+        return HealthMonitorConfig()
+    return load_health_monitor_config(config.features)
+
+
+def resolve_cost_cap_usd(project_root: Path) -> float | None:
+    """Resolve the configured always-on cost cap for a project, or None.
+
+    Reads `features.health_monitor.cost_cap_usd` from `.forge/config.yaml`. A
+    broken/missing config resolves to None (uncapped), so a malformed file never
+    makes the cost-cap machinery flag or throttle spuriously. Shared by the
+    cost-cap health checker and the daemon self-throttle.
+    """
+
+    return load_health_monitor_config_from_project(project_root).cost_cap_usd

@@ -45,6 +45,7 @@ def build_scheduled_tasks(
     ]
     tasks.extend(_dreamer_tasks(project_root, forge_dir))
     tasks.extend(_observer_tasks(project_root, forge_dir))
+    tasks.extend(_health_monitor_tasks(project_root, forge_dir))
     return tasks
 
 
@@ -99,6 +100,33 @@ def _dreamer_tasks(project_root: Path, forge_dir: Path | None) -> list[Scheduled
         ("dreamer-reingest", DREAMER_WEEKLY_INTERVAL_SECONDS, reingest),
     ]
     return [ScheduledTask(name, interval, gated(name, run)) for name, interval, run in specs]
+
+
+# FR-HD-003/005, FR-COST-004: the always-on monitor sweeps the checkers on a
+# schedule. Hourly — latency/budget/cost don't change second-to-second, and this
+# bounds the alert rate against the capped DaemonState.alerts list.
+HEALTH_MONITOR_INTERVAL_SECONDS = 3600.0
+
+
+def _health_monitor_tasks(project_root: Path, forge_dir: Path | None) -> list[ScheduledTask]:
+    """Return the health-monitor sweep when `features.health_monitor` enables it; else []."""
+
+    # Lazy import: health.monitor imports daemon.state, and this module is imported
+    # by the daemon package __init__ — a top-level import would create a circular
+    # import (same reason _observer_tasks imports observer.monitor lazily).
+    from forge_os.health.monitor import HealthMonitor
+    from forge_os.health.monitor_config import load_health_monitor_config_from_project
+
+    if not load_health_monitor_config_from_project(project_root).enabled:
+        return []
+    monitor = HealthMonitor(project_root, forge_dir)
+    return [
+        ScheduledTask(
+            name="health-monitor",
+            interval_seconds=HEALTH_MONITOR_INTERVAL_SECONDS,
+            run=monitor.check,
+        )
+    ]
 
 
 def _observer_tasks(project_root: Path, forge_dir: Path | None) -> list[ScheduledTask]:

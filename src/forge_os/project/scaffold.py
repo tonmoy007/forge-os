@@ -77,6 +77,10 @@ def _build_config(
             "channels": False,
             "openclaw": False,
             "plugins": False,
+            # Always-on daemon monitor (FR-HD-003/005, FR-COST-004): off by default.
+            # Set to true (or a mapping with cost_cap_usd) to enable the periodic
+            # health sweep + cost self-throttle.
+            "health_monitor": False,
         },
     )
 
