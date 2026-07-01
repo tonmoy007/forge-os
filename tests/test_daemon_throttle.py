@@ -105,15 +105,27 @@ class TestCostThrottleEvaluate:
         assert decision.throttled is False
         assert decision.cost_cap_usd is None
 
-    def test_corrupt_events_db_does_not_crash_evaluate(self, tmp_path: Path) -> None:
-        # The throttle reads spend from inside a scheduled task; a corrupt
-        # events.db must degrade (not throttled), never raise out of the task.
+    def test_corrupt_events_db_fails_closed_when_capped(self, tmp_path: Path) -> None:
+        # A corrupt events.db under a configured cap means spend is UNKNOWN. A spend
+        # control must fail closed (throttle), not open — otherwise corrupting the
+        # metering source silently defeats the cap. Must not raise out of the task.
         forge = tmp_path / ".forge"
         forge.mkdir(parents=True, exist_ok=True)
         (forge / "events.db").write_bytes(b"not a sqlite database\x00\xff")
         decision = CostThrottle(tmp_path, cost_cap_usd=10.0).evaluate()  # must not raise
+        assert decision.throttled is True
+        assert decision.reason == "store_unreadable"
+        assert decision.ratio is None
+
+    def test_corrupt_events_db_uncapped_does_not_throttle(self, tmp_path: Path) -> None:
+        # No cap ⇒ no control to protect, so an unreadable store must not throttle
+        # (there is nothing to fail closed on).
+        forge = tmp_path / ".forge"
+        forge.mkdir(parents=True, exist_ok=True)
+        (forge / "events.db").write_bytes(b"not a sqlite database\x00\xff")
+        decision = CostThrottle(tmp_path).evaluate()  # uncapped, no config
         assert decision.throttled is False
-        assert decision.spent_usd == 0.0
+        assert decision.reason is None
 
 
 class TestThrottleGate:
@@ -157,6 +169,7 @@ class TestThrottleGate:
         assert result["throttled"] is True
         assert result["task"] == "dreamer-decay"
         assert result["ratio"] == 2.0
+        assert result["reason"] == "over_cap"
         reloaded = store.load()
         assert reloaded is not None
         assert len(reloaded.alerts) == 1
@@ -164,6 +177,33 @@ class TestThrottleGate:
         assert alert.source == "cost-throttle"
         assert alert.severity == "warning"
         assert alert.metadata["task"] == "dreamer-decay"
+        assert "cost cap reached" in alert.message
+
+    def test_unreadable_store_fails_closed_and_alerts(self, tmp_path: Path) -> None:
+        # The control-integrity path: a corrupt events.db under a cap must halt the
+        # cost-incurring task (fail closed) with a distinct, honest alert.
+        forge_dir = tmp_path / "forge"
+        store = _store_with_state(forge_dir)
+        (tmp_path / ".forge").mkdir(parents=True, exist_ok=True)
+        (tmp_path / ".forge" / "events.db").write_bytes(b"not a sqlite database\x00\xff")
+        ran = {"called": False}
+
+        def inner() -> dict[str, object] | None:
+            ran["called"] = True
+            return {"work": "done"}
+
+        throttle = CostThrottle(tmp_path, cost_cap_usd=10.0)
+        gated = throttle_gate(inner, throttle=throttle, store=store, task_name="dreamer-decay")
+
+        result = gated()
+
+        assert ran["called"] is False  # the cost-incurring task MUST be halted
+        assert result is not None
+        assert result["reason"] == "store_unreadable"
+        reloaded = store.load()
+        assert reloaded is not None
+        assert len(reloaded.alerts) == 1
+        assert "unreadable" in reloaded.alerts[0].message
 
     def test_repeated_throttle_dedups_to_one_alert(self, tmp_path: Path) -> None:
         forge_dir = tmp_path / "forge"

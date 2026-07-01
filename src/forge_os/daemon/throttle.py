@@ -44,11 +44,24 @@ THROTTLE_RATIO = CAP_WARN_RATIO
 
 TaskRun = Callable[[], dict[str, Any] | None]
 
+# Why a throttle tripped (also the alert-message key). "over_cap": measured spend
+# reached the cap. "store_unreadable": spend is UNKNOWN (corrupt events.db) and a
+# spend control must fail closed rather than assume we are under budget.
+REASON_OVER_CAP = "over_cap"
+REASON_STORE_UNREADABLE = "store_unreadable"
+
 _ALERT_SOURCE = "cost-throttle"
-# Stable across runs so DaemonStateStore.add_alert's consecutive-duplicate
-# suppression collapses a persistently-throttled task to a single alert; the
-# per-run numbers live in the alert metadata instead of the message.
-_ALERT_MESSAGE = "Always-on cost cap reached; throttling daemon maintenance."
+# One stable message per reason so DaemonStateStore.add_alert's consecutive-
+# duplicate suppression collapses a persistently-throttled task to a single alert;
+# the per-run numbers live in the alert metadata. A distinct message per reason
+# keeps the alert honest — an unreadable store is not "cap reached".
+_ALERT_MESSAGES = {
+    REASON_OVER_CAP: "Always-on cost cap reached; throttling daemon maintenance.",
+    REASON_STORE_UNREADABLE: (
+        "Recorded spend is unreadable (corrupt events.db); throttling daemon "
+        "maintenance as a precaution until spend can be metered."
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -58,7 +71,8 @@ class ThrottleDecision:
     throttled: bool
     spent_usd: float
     cost_cap_usd: float | None  # None ⇒ uncapped
-    ratio: float | None  # None ⇒ uncapped (no ratio to report)
+    ratio: float | None  # None ⇒ uncapped or spend unknown (no ratio to report)
+    reason: str | None = None  # REASON_* when throttled; None otherwise
 
 
 class CostThrottle:
@@ -78,16 +92,31 @@ class CostThrottle:
         cap = self._cost_cap_usd
         if cap is None:
             cap = resolve_cost_cap_usd(self.project_root)
-        spent = CostAggregator(self.project_root).totals().total_cost_usd or 0.0
+        totals = CostAggregator(self.project_root).totals()
+        spent = totals.total_cost_usd or 0.0
         if cap is None or cap <= 0:
-            # Uncapped ⇒ never throttle; the gate is a pass-through.
+            # Uncapped ⇒ no control to protect; never throttle (even if the store
+            # is unreadable — there is nothing to fail closed on). Pass-through.
             return ThrottleDecision(throttled=False, spent_usd=spent, cost_cap_usd=cap, ratio=None)
+        if not totals.readable:
+            # Capped but spend is UNKNOWN (unreadable events.db) ⇒ fail closed: a
+            # spend control must not be silently defeated by a corrupt metering
+            # source. No ratio (we cannot compute one); the gate names the reason.
+            return ThrottleDecision(
+                throttled=True,
+                spent_usd=spent,
+                cost_cap_usd=cap,
+                ratio=None,
+                reason=REASON_STORE_UNREADABLE,
+            )
         ratio = spent / cap
+        throttled = ratio >= THROTTLE_RATIO
         return ThrottleDecision(
-            throttled=ratio >= THROTTLE_RATIO,
+            throttled=throttled,
             spent_usd=spent,
             cost_cap_usd=cap,
             ratio=ratio,
+            reason=REASON_OVER_CAP if throttled else None,
         )
 
 
@@ -113,6 +142,7 @@ def throttle_gate(
         return {
             "throttled": True,
             "task": task_name,
+            "reason": decision.reason,
             **_decision_metrics(decision),
         }
 
@@ -137,13 +167,14 @@ def _record_throttle_alert(
     and de-dups the list so a persistently-throttled task never floods it.
     """
 
+    message = _ALERT_MESSAGES.get(decision.reason, _ALERT_MESSAGES[REASON_OVER_CAP])
     alert = DaemonAlert(
         alert_id=str(uuid4()),
         created_at=utc_now(),
         source=_ALERT_SOURCE,
         severity="warning",
-        message=_ALERT_MESSAGE,
-        metadata={"task": task_name, **_decision_metrics(decision)},
+        message=message,
+        metadata={"task": task_name, "reason": decision.reason, **_decision_metrics(decision)},
     )
     try:
         _ = store.add_alert(alert)

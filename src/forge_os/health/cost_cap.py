@@ -56,6 +56,21 @@ class CostCapHealthChecker(HealthChecker):
                 details=details,
             )
 
+        if not totals.readable:
+            # Capped but spend is unknown (unreadable events.db): reporting
+            # "within cap" would be a lie and would mask a defeated control.
+            return HealthResult(
+                healthy=False,
+                message=(
+                    "Cannot read recorded spend (events.db unreadable); "
+                    "cost cap cannot be enforced."
+                ),
+                details=details,
+                recommendations=[
+                    "Repair or remove the corrupt .forge/events.db so spend can be metered.",
+                ],
+            )
+
         ratio = spent / cap
         details["ratio"] = round(ratio, 3)
         if ratio >= 1.0:

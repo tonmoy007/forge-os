@@ -81,12 +81,24 @@ class TestCostAggregator:
         assert totals.priced_spawns == 0
         assert totals.total_spawns == 1
 
-    def test_corrupt_events_db_degrades_to_zero(self, tmp_path: Path) -> None:
-        # A present-but-unreadable events.db must degrade like a missing one, not
-        # crash the caller: the daemon self-throttle reads this from inside a
-        # scheduled task, where an unhandled raise is recorded as a failure every
-        # cycle. Guards both the S5 throttle and the S4 cost-cap checker.
+    def test_corrupt_events_db_marks_store_unreadable(self, tmp_path: Path) -> None:
+        # A present-but-unreadable events.db must NOT crash the caller (the daemon
+        # self-throttle reads this from inside a scheduled task), but it must also
+        # NOT be reported as zero spend — that would let a corrupt store defeat the
+        # cost cap. The aggregator reports spend as unknown (readable=False); the
+        # cost control consumers fail safe on that.
         root = _project(tmp_path)
         (root / ".forge" / "events.db").write_bytes(b"not a sqlite database\x00\xff")
         totals = CostAggregator(root).totals()  # must not raise
+        assert totals.total_cost_usd is None
+        assert totals.priced_spawns == 0
+        assert totals.total_spawns == 0
+        assert totals.readable is False
+
+    def test_missing_events_db_is_readable_zero(self, tmp_path: Path) -> None:
+        # A missing db is genuinely zero spend (not an error): readable stays True,
+        # so it is distinguishable from the corrupt case above.
+        root = _project(tmp_path)
+        totals = CostAggregator(root).totals()
         assert totals == CostTotals(total_cost_usd=None, priced_spawns=0, total_spawns=0)
+        assert totals.readable is True
